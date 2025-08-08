@@ -5,8 +5,10 @@
 #   fastq_root: "/abs/path/to/UltraLong"
 #   fastq_subpath: "basecalling/pass"     # subpath under each {sample}
 #   outdir: "/abs/path/to/ProjectOut"     # where outputs go
-
+import os
 from pathlib import Path
+
+from gitdb.util import dirname
 
 configfile: "config.yaml"
 
@@ -59,6 +61,10 @@ rule all:
            sample=SAMPLES, outdir=OUTDIR),
         expand("{outdir}/coverage/{sample}.run_mean.txt",
             sample=SAMPLES,outdir=OUTDIR),
+        expand("{outdir}/variants/{sample}/clair3.vcf.gz", sample=SAMPLES, outdir=OUTDIR)
+        # expand("{outdir}/variants/{sample}/medaka.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
+        # expand("{outdir}/variants/{sample}/longshot.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
+        # expand("{outdir}/variants/{sample}/consensus.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
 
 
 '''
@@ -229,3 +235,64 @@ rule mapping_stats:
         samtools idxstats               {input.bam} > {output.idx}
         """
 
+# ==============================================
+# Variant calling (3 callers) + consensus (≥2/3)
+# ==============================================
+
+# Clair3 — small variant calling for ONT
+rule clair3_call:
+    input:
+        bam = "{outdir}/alignment/{sample}.sorted.bam",
+        bai = "{outdir}/alignment/{sample}.sorted.bam.bai",
+        ref = config["reference"]
+    output:
+        vcf = "{outdir}/variants/{sample}/clair3.vcf.gz",
+        tbi = "{outdir}/variants/{sample}/clair3.vcf.gz.tbi"
+    params:
+        image   = config.get("clair3_docker_image", "hkubal/clair3:latest"),
+        gpus    = config.get("clair3_gpus", "all"),
+        outdir  = "{outdir}/variants/{sample}/clair3",
+        workdir = os.getcwd(),
+        ref_dir= dirname(config["reference"]),
+        model   = config.get("clair3_model_path", ""),
+        modeldir= config.get("clair3_model_dir","models"),
+        min_mq=2,
+        min_coverage=2
+    threads: 32
+    log:
+        "{outdir}/logs/{sample}.clair3.log"
+    shell:
+        r"""
+        set -euo pipefail
+        mkdir -p {params.outdir} $(dirname {output.vcf}) $(dirname {log})
+
+        docker run --rm --gpus {params.gpus} \
+          -u $(id -u):$(id -g) \
+          -v {params.workdir}:{params.workdir} \
+          -v {params.ref_dir}:{params.ref_dir} \
+          -v {params.modeldir}:/models \
+          -w {params.workdir} \
+          {params.image} \
+          bash -lc 'set -euo pipefail
+                    source /opt/conda/etc/profile.d/conda.sh
+                    conda activate clair3
+                    test -d /models/{params.model} || {{ echo "Model not found: /models/{params.model}"; exit 2; }}
+                    /opt/bin/run_clair3.sh \
+                      --bam_fn {input.bam} \
+                      --ref_fn {input.ref} \
+                      --remove_intermediate_dir \
+                      --include_all_ctgs \
+                      --threads {threads} \
+                      --min_mq={params.min_mq} \
+                      --min_coverage={params.min_coverage} \
+                      --snp_min_af=0.08 --indel_min_af=0.15 --qual=0 \
+                      --platform ont \
+                      --device=cuda:all \
+                      --model_path /models/{params.model} \
+                      --output {params.outdir}'
+
+        # Normalize/sort/index on host (same paths as inside container)
+        bcftools norm -f {input.ref} -m -both -Oz -o {params.outdir}/clair3.norm.vcf.gz {params.outdir}/merge_output.vcf.gz
+        bcftools sort -Oz -o {output.vcf} {params.outdir}/clair3.norm.vcf.gz
+        tabix -f -p vcf {output.vcf} >> {log} 2>&1
+        """
