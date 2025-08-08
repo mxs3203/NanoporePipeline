@@ -43,12 +43,29 @@ rule all:
            outdir=str(OUTDIR),sample=SAMPLES),
         expand("{outdir}/alignment/{sample}.sorted.bam.bai",
             outdir=str(OUTDIR),sample=SAMPLES),
-        expand("{outdir}/coverage/{sample}.mosdepth.summary.txt", outdir=str(OUTDIR),sample=SAMPLES),
-        expand("{outdir}/stats/{sample}.flagstat.txt",outdir=str(OUTDIR),sample=SAMPLES),
-        expand("{outdir}/stats/{sample}.stats.txt",outdir=str(OUTDIR),sample=SAMPLES),
-        expand("{outdir}/stats/{sample}.idxstats.txt",outdir=str(OUTDIR),sample=SAMPLES)
+        expand("{outdir}/coverage/{sample}.mosdepth.summary.txt",
+            sample=SAMPLES,outdir=OUTDIR),
+        expand("{outdir}/coverage/{sample}.mosdepth.global.dist.txt",
+            sample=SAMPLES,outdir=OUTDIR),
+        expand("{outdir}/coverage/{sample}.mosdepth.region.dist.txt",
+            sample=SAMPLES,outdir=OUTDIR),
+        expand("{outdir}/stats/{sample}.flagstat.txt",
+            sample=SAMPLES,outdir=OUTDIR),
+        expand("{outdir}/stats/{sample}.stats.txt",
+            sample=SAMPLES,outdir=OUTDIR),
+        expand("{outdir}/stats/{sample}.idxstats.txt",
+            sample=SAMPLES,outdir=OUTDIR),
+        expand("{outdir}/coverage/{sample}.chrom_mean.tsv",
+           sample=SAMPLES, outdir=OUTDIR),
+        expand("{outdir}/coverage/{sample}.run_mean.txt",
+            sample=SAMPLES,outdir=OUTDIR),
 
-# ---------------------- reference index ----------------------
+
+'''
+index_ref — Build reference indices once per project.
+Uses minimap2 to create the .mmi and samtools to make the .fai, both written under OUTDIR/ref.
+Note: faidx normally lands next to the FASTA, so we copy it into OUTDIR for tidy project-local artifacts.
+'''
 rule index_ref:
     input:
         fasta = str(REF)
@@ -68,7 +85,11 @@ rule index_ref:
         cp -f {input.fasta}.fai {output.fai}
         """
 
-# ---------------------- per-sample concat ----------------------
+'''
+ Concat_fastq — Merge all per-sample *.fastq.gz into a single file.
+ Discovers the file list for each {sample} and concatenates them to {outdir}/reads/{sample}.all.fastq.gz (gzip concatenation is safe).
+ Depends on the reference indices so mapping can start immediately after.
+'''
 rule concat_fastq:
     input:
         # force ref indexing to finish first (if you want strict ordering)
@@ -89,7 +110,11 @@ rule concat_fastq:
         printf "%s\n" {input.fastqs} | xargs -r cat > {output.out}
         """
 
-# Read-level QC with NanoPlot (per sample)
+'''
+nanoplot — Read-level QC on the merged FASTQ.
+Runs NanoPlot to produce N50, length/quality plots, and an HTML report under {outdir}/qc/{sample}.
+Outputs a tracked directory so all artifacts are captured.
+'''
 rule nanoplot:
     input:
         fq = "{outdir}/reads/{sample}.all.fastq.gz"
@@ -108,7 +133,11 @@ rule nanoplot:
                  --N50 --verbose > {log} 2>&1
         """
 
-# ---------------------- per-sample concat ----------------------
+'''
+align_minimap2 — Map ONT reads and produce a sorted BAM in one pass.
+Uses the minimap2 .mmi (map-ont with tuned params) and pipes to samtools sort → {outdir}/alignment/{sample}.sorted.bam.
+Threaded; stderr goes to a per-sample log for debugging.
+'''
 rule align_minimap2:
     input:
         ref = rules.index_ref.output.mmi,
@@ -126,7 +155,11 @@ rule align_minimap2:
           2> {log} \
         | samtools sort -@ {threads} -o {output.bam}
         """
-
+'''
+index_bam — Create the .bai index for each sorted BAM.
+Required for random access and for downstream tools (coverage and stats).
+Lightweight, typically runs quickly.
+'''
 rule index_bam:
     input:
         "{outdir}/alignment/{sample}.sorted.bam"
@@ -136,15 +169,20 @@ rule index_bam:
     shell:
         "samtools index -@ {threads} {input}"
 
-# ---------- Coverage (mosdepth) ----------
+'''
+mosdepth_coverage — Compute per-sample coverage summaries with mosdepth.
+Produces summary and distribution files (global/region) under {outdir}/coverage/, skipping huge per-base tracks by default (-n).
+If you need windowed coverage, swap -n for --by <window> to emit regions.bed.gz.
+'''
 rule mosdepth_coverage:
     input:
         bam = "{outdir}/alignment/{sample}.sorted.bam",
         bai = "{outdir}/alignment/{sample}.sorted.bam.bai"
     output:
-        summary    = "{outdir}/coverage/{sample}.mosdepth.summary.txt",
-        globaldist = "{outdir}/coverage/{sample}.mosdepth.global.dist.txt",
-        regiondist = "{outdir}/coverage/{sample}.mosdepth.region.dist.txt"
+        summary     = "{outdir}/coverage/{sample}.mosdepth.summary.txt",
+        globaldist  = "{outdir}/coverage/{sample}.mosdepth.global.dist.txt",
+        chrom_mean  = "{outdir}/coverage/{sample}.chrom_mean.tsv",
+        run_mean    = "{outdir}/coverage/{sample}.run_mean.txt"
     params:
         prefix = "{outdir}/coverage/{sample}"
     threads: 8
@@ -154,11 +192,23 @@ rule mosdepth_coverage:
         r"""
         set -euo pipefail
         mkdir -p $(dirname {params.prefix}) $(dirname {log})
-        # -n avoids gigantic per-base files; add --by 10000 for 10kb windows if you want regions.bed.gz
-        mosdepth -t {threads} -n {params.prefix} {input.bam} > {log} 2>&1
-        """
 
-# ---------- Mapping stats (samtools) ----------
+        # -n avoids huge per-base outputs
+        mosdepth -t {threads} -n {params.prefix} {input.bam} > {log} 2>&1
+
+        # Per-chromosome mean: skip header and any 'total' row
+        awk 'NR>1 && tolower($1)!="total" {{print $1"\t"$4}}' \
+            {output.summary} > {output.chrom_mean}
+
+        # Length-weighted run-wide mean depth across chromosomes
+        awk 'NR>1 && tolower($1)!="total" {{L+=$2; S+=$2*$4}} END{{if(L>0) printf("%.6f\n", S/L); else print "NA"}}' \
+            {output.summary} > {output.run_mean}
+        """
+'''
+mapping_stats — Generate mapping QC with samtools.
+Writes flagstat, stats, and idxstats text files under {outdir}/stats/ for each sample (MultiQC-friendly).
+Requires the BAM index and runs with modest threading.
+'''
 rule mapping_stats:
     input:
         bam = "{outdir}/alignment/{sample}.sorted.bam",
