@@ -1,0 +1,5 @@
+# Path to reference genome (FASTA). The Snakefile will make .mmi and .fai.
+reference: "/home/mateo/RefGenomes/T2THumanRef/GCF_009914755.1/GCF_009914755.1_T2T-CHM13v2.0_genomic.fa"
+data_root: "/mnt/wwn-0x5002538f42211069-part2/AlgebraBioinfLab/SequencingData/UltraLong/"
+outdir: "/home/mateo/PycharmProjects/NanoporePipeline/OUTPUT/"
+fastq_subpath: "basecalling2/pass"
