@@ -5,10 +5,8 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="034ef7d0-52d0-4e62-91f0-3a71443dd95f" name="Changes" comment="added coverage stats and generic stats. moving on variant calling">
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Snakefile" beforeDir="false" afterPath="$PROJECT_DIR$/Snakefile" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/config.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/config.yaml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -113,6 +111,9 @@
       <updated>1754637072176</updated>
       <workItem from="1754637073580" duration="13167000" />
       <workItem from="1754655033730" duration="1527000" />
+      <workItem from="1754694138922" duration="1779000" />
+      <workItem from="1755013401996" duration="590000" />
+      <workItem from="1755007973748" duration="1480000" />
     </task>
     <task id="LOCAL-00001" summary="Init">
       <option name="closed" value="true" />

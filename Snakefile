@@ -249,7 +249,7 @@ rule clair3_call:
         vcf = "{outdir}/variants/{sample}/clair3.vcf.gz",
         tbi = "{outdir}/variants/{sample}/clair3.vcf.gz.tbi"
     params:
-        image   = config.get("clair3_docker_image", "hkubal/clair3:latest"),
+        image   = config.get("clair3_docker_image", "hkubal/clair3-gpu:latest"),
         gpus    = config.get("clair3_gpus", "all"),
         outdir  = "{outdir}/variants/{sample}/clair3",
         workdir = os.getcwd(),
@@ -286,8 +286,10 @@ rule clair3_call:
                       --min_mq={params.min_mq} \
                       --min_coverage={params.min_coverage} \
                       --snp_min_af=0.08 --indel_min_af=0.15 --qual=0 \
-                      --platform ont \
-                      --device=cuda:all \
+                      --platform="ont" \
+                      --use_longphase_for_intermediate_phasing \
+                      --use_gpu \
+                      --device=cuda:0,1 \
                       --model_path /models/{params.model} \
                       --output {params.outdir}'
 
