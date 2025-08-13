@@ -1,5 +1,5 @@
 # General Config
-reference: "/home/mateo/RefGenomes/T2THumanRef/GCF_009914755.1/GCF_009914755.1_T2T-CHM13v2.0_genomic.fa"
+reference: "/home/mateo/RefGenomes/GCF_000001405.40/GCF_000001405.40_GRCh38.p14_genomic.fna"
 data_root: "/mnt/wwn-0x5002538f42211069-part2/AlgebraBioinfLab/SequencingData/UltraLong/"
 outdir: "/home/mateo/PycharmProjects/NanoporePipeline/OUTPUT/"
 fastq_subpath: "basecalling2/pass"
@@ -10,3 +10,4 @@ clair3_docker_image: "hkubal/clair3:latest"
 clair3_gpus: "all"
 clair3_model_path: "r1041_e82_400bps_sup_v520" #r1041_e82_400bps_hac_v500,r1041_e82_400bps_sup_v410,r1041_e82_400bps_hac_v410
 clair3_model_dir: "/home/mateo/PycharmProjects/NanoporePipeline/models/"
+clair3_bed_file: "/home/mateo/RefGenomes/GCF_000001405.40/gene_anotation.bed"

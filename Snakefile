@@ -49,8 +49,6 @@ rule all:
             sample=SAMPLES,outdir=OUTDIR),
         expand("{outdir}/coverage/{sample}.mosdepth.global.dist.txt",
             sample=SAMPLES,outdir=OUTDIR),
-        expand("{outdir}/coverage/{sample}.mosdepth.region.dist.txt",
-            sample=SAMPLES,outdir=OUTDIR),
         expand("{outdir}/stats/{sample}.flagstat.txt",
             sample=SAMPLES,outdir=OUTDIR),
         expand("{outdir}/stats/{sample}.stats.txt",
@@ -249,14 +247,15 @@ rule clair3_call:
         vcf = "{outdir}/variants/{sample}/clair3.vcf.gz",
         tbi = "{outdir}/variants/{sample}/clair3.vcf.gz.tbi"
     params:
-        image   = config.get("clair3_docker_image", "hkubal/clair3-gpu:latest"),
-        gpus    = config.get("clair3_gpus", "all"),
+        image   = config.get("clair3_docker_image", "hkubal/clair3:latest"),
+        gpus    = config.get("clair3_gpus", "0"),
         outdir  = "{outdir}/variants/{sample}/clair3",
         workdir = os.getcwd(),
         ref_dir= dirname(config["reference"]),
         model   = config.get("clair3_model_path", ""),
         modeldir= config.get("clair3_model_dir","models"),
-        min_mq=2,
+        bed_file= config.get("clair3_bed_file", ""),
+        min_mq=5,
         min_coverage=2
     threads: 32
     log:
@@ -266,30 +265,32 @@ rule clair3_call:
         set -euo pipefail
         mkdir -p {params.outdir} $(dirname {output.vcf}) $(dirname {log})
 
-        docker run --rm --gpus {params.gpus} \
-          -u $(id -u):$(id -g) \
+        docker run --rm --gpus "device=0" \
+        -e CUDA_VISIBLE_DEVICES=0 \
+        -u $(id -u):$(id -g) \
           -v {params.workdir}:{params.workdir} \
           -v {params.ref_dir}:{params.ref_dir} \
           -v {params.modeldir}:/models \
           -w {params.workdir} \
           {params.image} \
           bash -lc 'set -euo pipefail
-                    source /opt/conda/etc/profile.d/conda.sh
-                    conda activate clair3
-                    test -d /models/{params.model} || {{ echo "Model not found: /models/{params.model}"; exit 2; }}
+                  source /opt/conda/etc/profile.d/conda.sh
+                  conda activate clair3        
+
+                    test -d "/models/{params.model}" || {{ echo "Model not found: /models/{params.model}"; exit 2; }}
+
+
                     /opt/bin/run_clair3.sh \
                       --bam_fn {input.bam} \
                       --ref_fn {input.ref} \
+                      --bed_fn {params.bed_file} \
                       --remove_intermediate_dir \
                       --include_all_ctgs \
                       --threads {threads} \
                       --min_mq={params.min_mq} \
                       --min_coverage={params.min_coverage} \
                       --snp_min_af=0.08 --indel_min_af=0.15 --qual=0 \
-                      --platform="ont" \
-                      --use_longphase_for_intermediate_phasing \
-                      --use_gpu \
-                      --device=cuda:0,1 \
+                      --platform=ont \
                       --model_path /models/{params.model} \
                       --output {params.outdir}'
 
