@@ -59,7 +59,8 @@ rule all:
            sample=SAMPLES, outdir=OUTDIR),
         expand("{outdir}/coverage/{sample}.run_mean.txt",
             sample=SAMPLES,outdir=OUTDIR),
-        expand("{outdir}/variants/{sample}/clair3.vcf.gz", sample=SAMPLES, outdir=OUTDIR)
+        expand("{outdir}/variants/{sample}/clair3.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
+        expand("{outdir}/variants/{sample}/medaka.vcf.gz", sample=SAMPLES, outdir=OUTDIR)
         # expand("{outdir}/variants/{sample}/medaka.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
         # expand("{outdir}/variants/{sample}/longshot.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
         # expand("{outdir}/variants/{sample}/consensus.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
@@ -298,4 +299,113 @@ rule clair3_call:
         bcftools norm -f {input.ref} -m -both -Oz -o {params.outdir}/clair3.norm.vcf.gz {params.outdir}/merge_output.vcf.gz
         bcftools sort -Oz -o {output.vcf} {params.outdir}/clair3.norm.vcf.gz
         tabix -f -p vcf {output.vcf} >> {log} 2>&1
+        """
+
+rule medaka_call:
+    input:
+        bam = "{outdir}/alignment/{sample}.sorted.bam",
+        bai = "{outdir}/alignment/{sample}.sorted.bam.bai",
+        ref = config["reference"]
+    output:
+        vcf = "{outdir}/variants/{sample}/medaka.vcf.gz",
+        tbi = "{outdir}/variants/{sample}/medaka.vcf.gz.tbi"
+    params:
+        image = config.get("medaka_docker_image","ontresearch/medaka:latest"),
+        outdir   = "{outdir}/variants/{sample}/medaka",
+        workdir  = os.getcwd(),
+        ref_dir  = dirname(config["reference"]),
+        model    = config.get("medaka_model", "r1041_e82_400bps_sup_v5.0.0"),
+        bed      = config.get("target_bed", ""),    # optional
+    threads: 32
+    log:
+        "{outdir}/logs/{sample}.medaka.log"
+    shell:
+        r"""
+        set -euo pipefail
+        mkdir -p {params.outdir} $(dirname {output.vcf}) $(dirname {log})
+        
+        
+        # Run Medaka inside a container. Use GPU if available; harmless on CPU-only.
+        docker run --rm --gpus "device=0,1" \
+        -e CUDA_VISIBLE_DEVICES=0,1 \
+          -u $(id -u):$(id -g) \
+          -v {params.workdir}:{params.workdir} \
+          -v {params.ref_dir}:{params.ref_dir} \
+          -w {params.workdir} \
+          {params.image} \
+          bash -lc 'set -euo pipefail
+            inf="{params.outdir}/inference.hdf"
+            if [ -n "{params.model}" ]; then
+              medaka inference {input.bam} "$inf" --model {params.model} --regions {params.bed}
+            else
+              medaka inference {input.bam} "$inf" --regions {params.bed}
+            fi
+            # v2 syntax: medaka vcf <ref.fa> <out.vcf[.gz]> <inference.hdf>...
+            medaka vcf {input.ref} {params.outdir}/medaka.raw.vcf.gz "$inf"
+          ' > {log} 2>&1
+
+        # Normalize → sort → index on host
+        bcftools norm -f {input.ref} -m -both -Oz -o {params.outdir}/medaka.norm.vcf.gz {params.outdir}/medaka.raw.vcf.gz
+        bcftools sort -Oz -o {output.vcf} {params.outdir}/medaka.norm.vcf.gz
+        tabix -f -p vcf {output.vcf} >> {log} 2>&1
+            
+        """
+
+
+rule longshot_call:
+    input:
+        bam = "{outdir}/alignment/{sample}.sorted.bam",
+        bai = "{outdir}/alignment/{sample}.sorted.bam.bai",
+        ref = config["reference"]
+    output:
+        vcf = "{outdir}/variants/{sample}/longshot.vcf.gz",
+        tbi = "{outdir}/variants/{sample}/longshot.vcf.gz.tbi"
+    params:
+        image    = config.get("longshot_docker_image", "biocontainers/longshot:latest"),
+        outdir   = "{outdir}/variants/{sample}/longshot",
+        workdir  = os.getcwd(),
+        ref_dir  = dirname(config["reference"]),
+        bed      = config.get("target_bed", ""),   # optional regions BED
+        min_mq   = int(config.get("longshot_min_mq", 5)),
+        min_af   = config.get("longshot_min_af", 0.08),
+        max_cov  = config.get("longshot_max_cov", 1000),   # set 0 to disable
+        extra    = config.get("longshot_extra", ""),       # optional extra flags
+    threads: 16
+    log:
+        "{outdir}/logs/{sample}.longshot.log"
+    shell:
+        r"""
+        set -euo pipefail
+        mkdir -p {params.outdir} $(dirname {output.vcf}) $(dirname {log})
+
+        BED_ARG=""
+        if [ -n "{params.bed}" ]; then BED_ARG="--regions_bed {params.bed}"; fi
+
+        docker run --rm \
+          -u $(id -u):$(id -g) \
+          -v {params.workdir}:{params.workdir} \
+          -v {params.ref_dir}:{params.ref_dir} \
+          -w {params.workdir} \
+          {params.image} \
+          bash -lc 'set -euo pipefail
+            # raw call
+            longshot \
+              --bam {input.bam} \
+              --ref {input.ref} \
+              --out {params.outdir}/longshot.raw.vcf \
+              --sample_id {wildcards.sample} \
+              --min_mapq {params.min_mq} \
+              --min_alt_frac {params.min_af} \
+              --max_cov {params.max_cov} \
+              --num_threads {threads} \
+              $BED_ARG \
+              {params.extra} \
+              > {log} 2>&1
+
+            # bgzip + normalize + sort + index
+            bgzip -f -c {params.outdir}/longshot.raw.vcf > {params.outdir}/longshot.raw.vcf.gz
+            bcftools norm -f {input.ref} -m -both -Oz -o {params.outdir}/longshot.norm.vcf.gz {params.outdir}/longshot.raw.vcf.gz
+            bcftools sort -Oz -o {output.vcf} {params.outdir}/longshot.norm.vcf.gz
+            tabix -f -p vcf {output.vcf}
+          '
         """

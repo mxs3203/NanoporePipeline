@@ -10,4 +10,8 @@ clair3_docker_image: "hkubal/clair3:latest"
 clair3_gpus: "all"
 clair3_model_path: "r1041_e82_400bps_sup_v520" #r1041_e82_400bps_hac_v500,r1041_e82_400bps_sup_v410,r1041_e82_400bps_hac_v410
 clair3_model_dir: "/home/mateo/PycharmProjects/NanoporePipeline/models/"
-clair3_bed_file: "/home/mateo/RefGenomes/GCF_000001405.40/gene_anotation.bed"
+target_bed: "/home/mateo/RefGenomes/GCF_000001405.40/gene_anotation.bed"
+
+# Medaka Config
+medaka_model: "r1041_e82_400bps_sup_variant_v5.0.0"
+medaka_docker_image: "ontresearch/medaka:latest"

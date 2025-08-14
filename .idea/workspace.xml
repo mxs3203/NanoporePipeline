@@ -4,9 +4,11 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="034ef7d0-52d0-4e62-91f0-3a71443dd95f" name="Changes" comment="Lets use Grch38 because it is annotated better">
+    <list default="true" id="034ef7d0-52d0-4e62-91f0-3a71443dd95f" name="Changes" comment="Clair3 without GPU works but takes forever :(">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Snakefile" beforeDir="false" afterPath="$PROJECT_DIR$/Snakefile" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/TODO" beforeDir="false" afterPath="$PROJECT_DIR$/TODO" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/config.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/config.yaml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -114,7 +116,10 @@
       <workItem from="1754694138922" duration="1779000" />
       <workItem from="1755013401996" duration="590000" />
       <workItem from="1755007973748" duration="13342000" />
-      <workItem from="1755065263952" duration="7948000" />
+      <workItem from="1755065263952" duration="12534000" />
+      <workItem from="1755181031675" duration="853000" />
+      <workItem from="1755190854488" duration="2337000" />
+      <workItem from="1755196024393" duration="171000" />
     </task>
     <task id="LOCAL-00001" summary="Init">
       <option name="closed" value="true" />
@@ -148,7 +153,15 @@
       <option name="project" value="LOCAL" />
       <updated>1755066355706</updated>
     </task>
-    <option name="localTasksCounter" value="5" />
+    <task id="LOCAL-00005" summary="Clair3 without GPU works but takes forever :(">
+      <option name="closed" value="true" />
+      <created>1755166877415</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1755166877415</updated>
+    </task>
+    <option name="localTasksCounter" value="6" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -159,7 +172,8 @@
     <MESSAGE value="added coverage stats and generic stats. moving on variant calling" />
     <MESSAGE value="replaced clair3 with clair3-gpu. Seems to be faster" />
     <MESSAGE value="Lets use Grch38 because it is annotated better" />
-    <option name="LAST_COMMIT_MESSAGE" value="Lets use Grch38 because it is annotated better" />
+    <MESSAGE value="Clair3 without GPU works but takes forever :(" />
+    <option name="LAST_COMMIT_MESSAGE" value="Clair3 without GPU works but takes forever :(" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/NanoporePipeline$Snakefile.coverage" NAME="Snakefile Coverage Results" MODIFIED="1754638032814" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
