@@ -148,7 +148,7 @@ rule align_minimap2:
         fq  = "{outdir}/reads/{sample}.all.fastq.gz"
     output:
         bam = "{outdir}/alignment/{sample}.sorted.bam"
-    threads: 10
+    threads: 32
     log:
         "{outdir}/logs/{sample}.minimap2.log"
     shell:
@@ -281,17 +281,17 @@ rule clair3_call:
 
 
                     /opt/bin/run_clair3.sh \
-                      --bam_fn {input.bam} \
-                      --ref_fn {input.ref} \
-                      --bed_fn {params.bed_file} \
+                      --bam_fn={input.bam} \
+                      --ref_fn={input.ref} \
+                      --bed_fn={params.bed_file} \
                       --remove_intermediate_dir \
                       --include_all_ctgs \
-                      --threads {threads} \
+                      --threads={threads} \
                       --min_mq={params.min_mq} \
                       --min_coverage={params.min_coverage} \
                       --snp_min_af=0.08 --indel_min_af=0.15 --qual=0 \
                       --platform=ont \
-                      --model_path /models/{params.model} \
+                      --model_path=/models/{params.model} \
                       --output {params.outdir}'
 
         # Normalize/sort/index on host (same paths as inside container)
