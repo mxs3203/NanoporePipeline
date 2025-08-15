@@ -314,7 +314,7 @@ rule medaka_call:
         outdir   = "{outdir}/variants/{sample}/medaka",
         workdir  = os.getcwd(),
         ref_dir  = dirname(config["reference"]),
-        model    = config.get("medaka_model", "r1041_e82_400bps_sup_v5.0.0"),
+        model    = config.get("medaka_model", "r1041_e82_400bps_sup_variant_v5.0.0"),
         bed      = config.get("target_bed", ""),    # optional
     threads: 32
     log:
@@ -326,7 +326,7 @@ rule medaka_call:
         
         
         # Run Medaka inside a container. Use GPU if available; harmless on CPU-only.
-        docker run --rm --gpus "device=0,1" \
+        docker run --rm --gpus "device=all" \
         -e CUDA_VISIBLE_DEVICES=0,1 \
           -u $(id -u):$(id -g) \
           -v {params.workdir}:{params.workdir} \
@@ -335,13 +335,13 @@ rule medaka_call:
           {params.image} \
           bash -lc 'set -euo pipefail
             inf="{params.outdir}/inference.hdf"
-            if [ -n "{params.model}" ]; then
-              medaka inference {input.bam} "$inf" --model {params.model} --regions {params.bed}
-            else
-              medaka inference {input.bam} "$inf" --regions {params.bed}
-            fi
-            # v2 syntax: medaka vcf <ref.fa> <out.vcf[.gz]> <inference.hdf>...
-            medaka vcf {input.ref} {params.outdir}/medaka.raw.vcf.gz "$inf"
+            mkdir -p {params.outdir}
+            
+            # 1) inference
+            medaka inference "{input.bam}" "$inf" --model "{params.model}"
+        
+            # 2) vcf  (order: REF  OUT.vcf.gz  HDF...)
+            medaka vcf "{input.ref}" "{params.outdir}/medaka.raw.vcf.gz" "$inf"
           ' > {log} 2>&1
 
         # Normalize → sort → index on host
