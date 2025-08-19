@@ -61,7 +61,6 @@ rule all:
             sample=SAMPLES,outdir=OUTDIR),
         expand("{outdir}/variants/{sample}/clair3.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
         expand("{outdir}/variants/{sample}/medaka.vcf.gz", sample=SAMPLES, outdir=OUTDIR)
-        # expand("{outdir}/variants/{sample}/medaka.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
         # expand("{outdir}/variants/{sample}/longshot.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
         # expand("{outdir}/variants/{sample}/consensus.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
 
@@ -255,7 +254,7 @@ rule clair3_call:
         ref_dir= dirname(config["reference"]),
         model   = config.get("clair3_model_path", ""),
         modeldir= config.get("clair3_model_dir","models"),
-        bed_file= config.get("clair3_bed_file", ""),
+        bed_file= config.get("target_bed", ""),
         min_mq=5,
         min_coverage=2
     threads: 32
@@ -287,6 +286,7 @@ rule clair3_call:
                       --bed_fn={params.bed_file} \
                       --remove_intermediate_dir \
                       --include_all_ctgs \
+                      --longphase_for_phasing \
                       --threads={threads} \
                       --min_mq={params.min_mq} \
                       --min_coverage={params.min_coverage} \
@@ -336,12 +336,25 @@ rule medaka_call:
           bash -lc 'set -euo pipefail
             inf="{params.outdir}/inference.hdf"
             mkdir -p {params.outdir}
-            
+            # Resolve a valid VARIANT model inside this container
+            MODEL="{params.model}"
+            if [ -z "$MODEL" ]; then
+              MODEL="$(medaka tools resolve_model --auto_model variant {input.bam} 2>/dev/null || true)"
+            fi
+            if [ -z "$MODEL" ]; then
+              MODEL="$(medaka tools list_models 2>/dev/null | awk '"'"'/variant/{{print $1; exit}}'"'"' || true)"
+            fi
+            if [ -z "$MODEL" ]; then
+              echo "[medaka] ERROR: no variant model available in this image." >&2
+              medaka tools list_models 2>&1 || true
+              exit 2
+            fi
+            echo "[medaka] Using model: $MODEL"
             # 1) inference
-            medaka inference "{input.bam}" "$inf" --model "{params.model}"
-        
+            medaka inference "{input.bam}" "$inf" --model "$MODEL" --regions "NC_000001.11"
+            echo $inf
             # 2) vcf  (order: REF  OUT.vcf.gz  HDF...)
-            medaka vcf "{input.ref}" "{params.outdir}/medaka.raw.vcf.gz" "$inf"
+            medaka vcf {input.ref} {params.outdir}/medaka.raw.vcf.gz $inf
           ' > {log} 2>&1
 
         # Normalize → sort → index on host

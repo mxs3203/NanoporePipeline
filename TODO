@@ -5,6 +5,8 @@
 
 - Variant Effect predictor VEP https://www.ensembl.org/info/docs/tools/vep/index.html
 
+-Annotate by https://search.clinicalgenome.org/kb/downloads#section_gene-disease-validity
+
 I've analyzed my own WGS too like 7 years ago. I've run a bunch of analysis and annotation tools and I don't even remember all of them.
  Looking at the .sh scripts I've saved, I've run GATK, DeepVariant, Manta, MetaSV, Canvas,
  Nirvana, AKT, and have annotated with HGMD and SnpSift/SnpEff. Aligned with both NovoAlign and BWA MEM using
