@@ -7,7 +7,7 @@
     <list default="true" id="034ef7d0-52d0-4e62-91f0-3a71443dd95f" name="Changes" comment="Medaka seems to be working...">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Snakefile" beforeDir="false" afterPath="$PROJECT_DIR$/Snakefile" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/TODO" beforeDir="false" afterPath="$PROJECT_DIR$/TODO" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/config.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/config.yaml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -121,6 +121,7 @@
       <workItem from="1755196024393" duration="171000" />
       <workItem from="1755205818194" duration="22126000" />
       <workItem from="1755559389392" duration="6417000" />
+      <workItem from="1755712850239" duration="3266000" />
     </task>
     <task id="LOCAL-00001" summary="Init">
       <option name="closed" value="true" />

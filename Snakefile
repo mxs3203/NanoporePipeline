@@ -60,9 +60,8 @@ rule all:
         expand("{outdir}/coverage/{sample}.run_mean.txt",
             sample=SAMPLES,outdir=OUTDIR),
         expand("{outdir}/variants/{sample}/clair3.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
-        expand("{outdir}/variants/{sample}/medaka.vcf.gz", sample=SAMPLES, outdir=OUTDIR)
-        # expand("{outdir}/variants/{sample}/longshot.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
-        # expand("{outdir}/variants/{sample}/consensus.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
+        expand("{outdir}/variants/{sample}/longshot.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
+        expand("{outdir}/variants/{sample}/longshot_clair3.vcf.gz", sample=SAMPLES, outdir=OUTDIR)
 
 
 '''
@@ -364,7 +363,6 @@ rule medaka_call:
             
         """
 
-
 rule longshot_call:
     input:
         bam = "{outdir}/alignment/{sample}.sorted.bam",
@@ -374,7 +372,7 @@ rule longshot_call:
         vcf = "{outdir}/variants/{sample}/longshot.vcf.gz",
         tbi = "{outdir}/variants/{sample}/longshot.vcf.gz.tbi"
     params:
-        image    = config.get("longshot_docker_image", "biocontainers/longshot:latest"),
+        image    = config.get("longshot_docker_image", "quay.io/biocontainers/longshot:1.0.0--h8dc4d9d_3"),
         outdir   = "{outdir}/variants/{sample}/longshot",
         workdir  = os.getcwd(),
         ref_dir  = dirname(config["reference"]),
@@ -382,8 +380,7 @@ rule longshot_call:
         min_mq   = int(config.get("longshot_min_mq", 5)),
         min_af   = config.get("longshot_min_af", 0.08),
         max_cov  = config.get("longshot_max_cov", 1000),   # set 0 to disable
-        extra    = config.get("longshot_extra", ""),       # optional extra flags
-    threads: 16
+    threads:6
     log:
         "{outdir}/logs/{sample}.longshot.log"
     shell:
@@ -405,20 +402,72 @@ rule longshot_call:
             longshot \
               --bam {input.bam} \
               --ref {input.ref} \
+              -A -S \
               --out {params.outdir}/longshot.raw.vcf \
               --sample_id {wildcards.sample} \
               --min_mapq {params.min_mq} \
               --min_alt_frac {params.min_af} \
-              --max_cov {params.max_cov} \
-              --num_threads {threads} \
-              $BED_ARG \
-              {params.extra} \
+              --max_cov {params.max_cov} 
               > {log} 2>&1
 
             # bgzip + normalize + sort + index
             bgzip -f -c {params.outdir}/longshot.raw.vcf > {params.outdir}/longshot.raw.vcf.gz
             bcftools norm -f {input.ref} -m -both -Oz -o {params.outdir}/longshot.norm.vcf.gz {params.outdir}/longshot.raw.vcf.gz
             bcftools sort -Oz -o {output.vcf} {params.outdir}/longshot.norm.vcf.gz
+            tabix -f -p vcf {output.vcf}
+          '
+        """
+
+
+rule longshot_with_clair_input_call:
+    input:
+        bam = "{outdir}/alignment/{sample}.sorted.bam",
+        bai = "{outdir}/alignment/{sample}.sorted.bam.bai",
+        clair_vcf = "{outdir}/variants/{sample}/clair3.vcf.gz",
+        ref = config["reference"]
+    output:
+        vcf = "{outdir}/variants/{sample}/longshot_clair3.vcf.gz",
+        tbi = "{outdir}/variants/{sample}/longshot_clair3.vcf.gz.tbi"
+    params:
+        image    = config.get("longshot_docker_image", "quay.io/biocontainers/longshot:1.0.0--h8dc4d9d_3"),
+        outdir   = "{outdir}/variants/{sample}/longshot",
+        workdir  = os.getcwd(),
+        ref_dir  = dirname(config["reference"]),
+        min_mq   = int(config.get("longshot_min_mq", 5)),
+        min_af   = config.get("longshot_min_af", 0.08),
+        max_cov  = config.get("longshot_max_cov", 1000),   # set 0 to disable
+    threads:6
+    log:
+        "{outdir}/logs/{sample}.longshot.log"
+    shell:
+        r"""
+        set -euo pipefail
+        mkdir -p {params.outdir} $(dirname {output.vcf}) $(dirname {log})
+
+        docker run --rm \
+          -u $(id -u):$(id -g) \
+          -v {params.workdir}:{params.workdir} \
+          -v {params.ref_dir}:{params.ref_dir} \
+          -w {params.workdir} \
+          {params.image} \
+          bash -lc 'set -euo pipefail
+            # raw call
+            longshot \
+              --bam {input.bam} \
+              --ref {input.ref} \
+              -A -S \
+              -v {input.clair_vcf} \
+              --out {params.outdir}/longshot_clair3.raw.vcf \
+              --sample_id {wildcards.sample} \
+              --min_mapq {params.min_mq} \
+              --min_alt_frac {params.min_af} \
+              --max_cov {params.max_cov} 
+              > {log} 2>&1
+
+            # bgzip + normalize + sort + index
+            bgzip -f -c {params.outdir}/longshot_clair3.raw.vcf > {params.outdir}/longshot_clair3.raw.vcf.gz
+            bcftools norm -f {input.ref} -m -both -Oz -o {params.outdir}/longshot_clair3.norm.vcf.gz {params.outdir}/longshot_clair3.raw.vcf.gz
+            bcftools sort -Oz -o {output.vcf} {params.outdir}/longshot_clair3.norm.vcf.gz
             tabix -f -p vcf {output.vcf}
           '
         """

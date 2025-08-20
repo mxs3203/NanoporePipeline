@@ -15,3 +15,9 @@ target_bed: "/home/mateo/RefGenomes/GCF_000001405.40/gene_anotation.bed"
 # Medaka Config
 medaka_model: "r1041_e82_400bps_sup_variant_v5.0.0"
 medaka_docker_image: "ontresearch/medaka:latest"
+
+#Longshot
+longshot_docker_image: "quay.io/biocontainers/longshot:1.0.0--h8dc4d9d_3"
+longshot_min_af: 0.05
+longshot_max_cov: 1000
+longshot_min_mq: 5
