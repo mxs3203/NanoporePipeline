@@ -1,8 +1,8 @@
 # General Config
 reference: "/home/mateo/RefGenomes/GCF_000001405.40/GCF_000001405.40_GRCh38.p14_genomic.fna"
-data_root: "/mnt/wwn-0x5002538f42211069-part2/AlgebraBioinfLab/SequencingData/UltraLong/"
-outdir: "/home/mateo/PycharmProjects/NanoporePipeline/OUTPUT/"
-fastq_subpath: "basecalling2/pass"
+data_root: "/mnt/wwn-0x5002538f42211069-part2/AlgebraBioinfLab/SequencingData/UltraLong"
+outdir: "/home/mateo/PycharmProjects/NanoporePipeline/OUTPUT"
+fastq_subpath: "basecalling/pass"
 
 
 # Clair3 Config
@@ -12,12 +12,32 @@ clair3_model_path: "r1041_e82_400bps_sup_v520" #r1041_e82_400bps_hac_v500,r1041_
 clair3_model_dir: "/home/mateo/PycharmProjects/NanoporePipeline/models/"
 target_bed: "/home/mateo/RefGenomes/GCF_000001405.40/gene_anotation.bed"
 
-# Medaka Config
-medaka_model: "r1041_e82_400bps_sup_variant_v5.0.0"
-medaka_docker_image: "ontresearch/medaka:latest"
+# DP=6 this requires ≥2 ALT reads (2/6=0.33), which dramatically reduces
+# single-read SNP false positives that often slip through the defaults (defaults are ~0.08 for SNPs)
+clair3_min_mq: 20
+clair3_min_coverage: 4
+clair3_qual: 8
+clair3_indel_min_af: 0.3
+clair3_snp_min_af: 0.3
+
 
 #Longshot
 longshot_docker_image: "quay.io/biocontainers/longshot:1.0.0--h8dc4d9d_3"
-longshot_min_af: 0.05
-longshot_max_cov: 1000
-longshot_min_mq: 5
+longshot_min_af: 0.25
+longshot_max_cov: auto
+longshot_min_mq: 20
+
+#Sniffles2
+sniffles_docker_image: "quay.io/biocontainers/sniffles:2.6.3--pyhdfd78af_0"
+sniffles_min_support : 2
+sniffles_minsvlen: 50
+sniffles_mapq: 25
+sniffles_qc_coverage : 1
+sniffles_tandem_repeats_bed: "/home/mateo/RefGenomes/GCF_000001405.40/human_GRCh38_TANDEM_REPEATS.trf.bed"
+
+# Megalodon
+fast5_dir: ""
+megalodon_venv: "/home/mateo/venvs/megalodon-2_5"   # your Python 3.10 venv from Option B
+guppy_server_path: "/opt/ont/ont-guppy/bin/guppy_basecall_server"
+guppy_config: "dna_r10.4.1_e8.2_400bps_sup.cfg"
+megalodon_mod_motifs: ["m", "CG", 0]

@@ -1,14 +1,11 @@
-# Minimal UL-ONT prep: index REF + per-sample FASTQ concatenation
-# --------------------------------------------------------------
-# config.yaml must define:
-#   reference: "/abs/path/to/GRCh38.fa"
-#   fastq_root: "/abs/path/to/UltraLong"
-#   fastq_subpath: "basecalling/pass"     # subpath under each {sample}
-#   outdir: "/abs/path/to/ProjectOut"     # where outputs go
+import glob
 import os
+from os.path import join
 from pathlib import Path
-
 from gitdb.util import dirname
+
+wildcard_constraints:
+    sample = r"[^/]+"
 
 configfile: "config.yaml"
 
@@ -32,36 +29,58 @@ def fastq_list(wc):
     # All per-sample FASTQs, recursive just in case
     return sorted(str(p) for p in (DATAROOT / wc.sample / SUBPATH).rglob("*.fastq.gz"))
 
+def find_dorado_inputs(wc):
+    base = config["data_root"]  # e.g. "/mnt/.../UltraLong"
+    s = wc.sample
+    cand_dirs = [
+        f"{base}/{s}/basecalling/pass",
+        f"{base}/{s}/basecalling/fail",
+        f"{base}/{s}/pass",
+        f"{base}/{s}/fail",
+        f"{base}/{s}",
+    ]
+    files = []
+    for d in cand_dirs:
+        if os.path.isdir(d):
+            files += sorted(glob.glob(os.path.join(d, "*.bam")))
+            files += sorted(glob.glob(os.path.join(d, "*.fastq"))) \
+                  +  sorted(glob.glob(os.path.join(d, "*.fq"))) \
+                  +  sorted(glob.glob(os.path.join(d, "*.fastq.gz"))) \
+                  +  sorted(glob.glob(os.path.join(d, "*.fq.gz")))
+    if not files:
+        raise ValueError(f"No Dorado outputs found for sample {s} under {base}")
+    return files
 # ---------------------- targets ----------------------
 rule all:
     input:
         # reference indices (written into OUTDIR/ref/)
         str(OUTDIR / "ref" / f"{REF_BASENAME}.mmi"),
         str(OUTDIR / "ref" / f"{REF_BASENAME}.fai"),
-        expand("{outdir}/reads/{sample}.all.fastq.gz",
-               outdir=str(OUTDIR), sample=SAMPLES),
+        # Alignment
+        expand("{outdir}/alignment/{sample}.bam",outdir=str(OUTDIR),sample=SAMPLES),
+        expand("{outdir}/alignment/{sample}.sorted.bam", outdir=str(OUTDIR),sample=SAMPLES),
+        expand("{outdir}/alignment/{sample}.sorted.bam.bai",outdir=str(OUTDIR),sample=SAMPLES),
+        expand("{outdir}/alignment/{sample}.summary.tsv", outdir=str(OUTDIR),sample=SAMPLES),
+        # QC
         expand("{outdir}/qc/{sample}", outdir=str(OUTDIR),sample=SAMPLES),
-        expand("{outdir}/alignment/{sample}.sorted.bam",
-           outdir=str(OUTDIR),sample=SAMPLES),
-        expand("{outdir}/alignment/{sample}.sorted.bam.bai",
-            outdir=str(OUTDIR),sample=SAMPLES),
-        expand("{outdir}/coverage/{sample}.mosdepth.summary.txt",
-            sample=SAMPLES,outdir=OUTDIR),
-        expand("{outdir}/coverage/{sample}.mosdepth.global.dist.txt",
-            sample=SAMPLES,outdir=OUTDIR),
-        expand("{outdir}/stats/{sample}.flagstat.txt",
-            sample=SAMPLES,outdir=OUTDIR),
-        expand("{outdir}/stats/{sample}.stats.txt",
-            sample=SAMPLES,outdir=OUTDIR),
-        expand("{outdir}/stats/{sample}.idxstats.txt",
-            sample=SAMPLES,outdir=OUTDIR),
-        expand("{outdir}/coverage/{sample}.chrom_mean.tsv",
-           sample=SAMPLES, outdir=OUTDIR),
-        expand("{outdir}/coverage/{sample}.run_mean.txt",
-            sample=SAMPLES,outdir=OUTDIR),
-        expand("{outdir}/variants/{sample}/clair3.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
-        expand("{outdir}/variants/{sample}/longshot.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
-        expand("{outdir}/variants/{sample}/longshot_clair3.vcf.gz", sample=SAMPLES, outdir=OUTDIR)
+        # stats
+        # expand("{outdir}/coverage/{sample}.mosdepth.summary.txt",sample=SAMPLES,outdir=OUTDIR),
+        # expand("{outdir}/coverage/{sample}.mosdepth.global.dist.txt",  sample=SAMPLES,outdir=OUTDIR),
+        # expand("{outdir}/stats/{sample}.flagstat.txt",sample=SAMPLES,outdir=OUTDIR),
+        # expand("{outdir}/stats/{sample}.stats.txt", sample=SAMPLES,outdir=OUTDIR),
+        # expand("{outdir}/stats/{sample}.idxstats.txt", sample=SAMPLES,outdir=OUTDIR),
+        # expand("{outdir}/coverage/{sample}.chrom_mean.tsv",sample=SAMPLES, outdir=OUTDIR),
+        # expand("{outdir}/coverage/{sample}.run_mean.txt",sample=SAMPLES,outdir=OUTDIR),
+        # # # variants
+        # expand("{outdir}/variants/{sample}/clair3/merge_output.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
+        # expand("{outdir}/variants/{sample}/longshot/longshot.raw.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
+        # expand("{outdir}/variants/{sample}/longshot/longshot_clair3.raw.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
+        # expand("{outdir}/variants/{sample}/sniffles/sniffles.snf", sample=SAMPLES, outdir=OUTDIR),
+        # variants norm
+        # expand("{outdir}/variants/{sample}/clair3/clair3.norm.sort.vcf.gz", outdir=config["outdir"], sample=SAMPLES),
+        # expand("{outdir}/variants/{sample}/longshot/longshot.norm.sort.vcf.gz", outdir=config["outdir"],sample=SAMPLES),
+        # expand("{outdir}/variants/{sample}/longshot/longshot_clair3.norm.sort.vcf.gz",outdir=config["outdir"],sample=SAMPLES),
+        # expand("{outdir}/variants/{sample}/sniffles/sniffles.norm.sort.vcf.gz",outdir=config["outdir"],sample=SAMPLES),
 
 
 '''
@@ -89,31 +108,6 @@ rule index_ref:
         """
 
 '''
- Concat_fastq — Merge all per-sample *.fastq.gz into a single file.
- Discovers the file list for each {sample} and concatenates them to {outdir}/reads/{sample}.all.fastq.gz (gzip concatenation is safe).
- Depends on the reference indices so mapping can start immediately after.
-'''
-rule concat_fastq:
-    input:
-        # force ref indexing to finish first (if you want strict ordering)
-        ref_mmi = rules.index_ref.output.mmi,
-        ref_fai = rules.index_ref.output.fai,
-        fastqs  = fastq_list
-    output:
-        out = "{outdir}/reads/{sample}.all.fastq.gz"
-    params:
-        outdir = str(OUTDIR)
-    log:
-        "{outdir}/logs/{sample}.concat.log"
-    shell:
-        r"""
-        set -euo pipefail
-        mkdir -p $(dirname {output.out}) $(dirname {log})
-        # Safe concat even with many files; gzip concatenation is valid.
-        printf "%s\n" {input.fastqs} | xargs -r cat > {output.out}
-        """
-
-'''
 nanoplot — Read-level QC on the merged FASTQ.
 Runs NanoPlot to produce N50, length/quality plots, and an HTML report under {outdir}/qc/{sample}.
 Outputs a tracked directory so all artifacts are captured.
@@ -137,40 +131,48 @@ rule nanoplot:
         """
 
 '''
-align_minimap2 — Map ONT reads and produce a sorted BAM in one pass.
+align_dorado — Map ONT reads and produce a sorted BAM in one pass.
 Uses the minimap2 .mmi (map-ont with tuned params) and pipes to samtools sort → {outdir}/alignment/{sample}.sorted.bam.
 Threaded; stderr goes to a per-sample log for debugging.
 '''
-rule align_minimap2:
+rule align_dorado:
     input:
-        ref = rules.index_ref.output.mmi,
-        fq  = "{outdir}/reads/{sample}.all.fastq.gz"
+        # Dorado aligner can use an mmi or fasta; leave your index rule as-is
+        ref = rules.index_ref.output.mmi
+    params:
+        # point this to your per-sample basecalled reads directory
+        # e.g. config.yaml: dorado_dir: "/mnt/.../UltraLong"
+        reads_dir = lambda wc: join(config["data_root"], wc.sample, "basecalling", "pass"),
+        tmpdir    = "{outdir}/alignment/{sample}.dorado_tmp"
     output:
-        bam = "{outdir}/alignment/{sample}.sorted.bam"
+        bam        = "{outdir}/alignment/{sample}.bam",
+        sorted_bam = "{outdir}/alignment/{sample}.sorted.bam",
+        bai        = "{outdir}/alignment/{sample}.sorted.bam.bai",
+        summary    = "{outdir}/alignment/{sample}.summary.tsv"
     threads: 32
     log:
-        "{outdir}/logs/{sample}.minimap2.log"
+        "{outdir}/logs/{sample}.dorado_align.log"
     shell:
         r"""
         set -euo pipefail
-        mkdir -p $(dirname {output.bam}) $(dirname {log})
-        minimap2 -t {threads} -K 200M -k 20 -w 25 -I50G -ax map-ont {input.ref} {input.fq} \
-          2> {log} \
-        | samtools sort -@ {threads} -o {output.bam}
+        mkdir -p {params.tmpdir} $(dirname {output.bam}) $(dirname {log})
+
+        # 1) Align: when INPUT is a directory, dorado requires --output-dir
+        dorado aligner {input.ref} "{params.reads_dir}" --output-dir "{params.tmpdir}" >> {log} 2>&1
+
+        # 2) Merge Dorado's chunked BAMs into a single BAM
+        samtools merge -@ {threads} -o {output.bam} {params.tmpdir}/*.bam >> {log} 2>&1
+
+        # 3) Sort & index
+        samtools sort -@ {threads} -o {output.sorted_bam} {output.bam} >> {log} 2>&1
+        samtools index -@ {threads} {output.sorted_bam} >> {log} 2>&1
+
+        # 4) Summary
+        dorado summary {output.sorted_bam} > {output.summary} 2>> {log}
+
+        # 5) Clean
+        rm -rf "{params.tmpdir}"
         """
-'''
-index_bam — Create the .bai index for each sorted BAM.
-Required for random access and for downstream tools (coverage and stats).
-Lightweight, typically runs quickly.
-'''
-rule index_bam:
-    input:
-        "{outdir}/alignment/{sample}.sorted.bam"
-    output:
-        "{outdir}/alignment/{sample}.sorted.bam.bai"
-    threads: 2
-    shell:
-        "samtools index -@ {threads} {input}"
 
 '''
 mosdepth_coverage — Compute per-sample coverage summaries with mosdepth.
@@ -232,8 +234,9 @@ rule mapping_stats:
         samtools idxstats               {input.bam} > {output.idx}
         """
 
+
 # ==============================================
-# Variant calling (3 callers) + consensus (≥2/3)
+# Variant calling
 # ==============================================
 
 # Clair3 — small variant calling for ONT
@@ -243,19 +246,23 @@ rule clair3_call:
         bai = "{outdir}/alignment/{sample}.sorted.bam.bai",
         ref = config["reference"]
     output:
-        vcf = "{outdir}/variants/{sample}/clair3.vcf.gz",
-        tbi = "{outdir}/variants/{sample}/clair3.vcf.gz.tbi"
+        vcf = "{outdir}/variants/{sample}/clair3/merge_output.vcf.gz"
     params:
         image   = config.get("clair3_docker_image", "hkubal/clair3:latest"),
         gpus    = config.get("clair3_gpus", "0"),
-        outdir  = "{outdir}/variants/{sample}/clair3",
+        outdir  = "{outdir}/variants/{sample}/clair3/",
         workdir = os.getcwd(),
         ref_dir= dirname(config["reference"]),
         model   = config.get("clair3_model_path", ""),
         modeldir= config.get("clair3_model_dir","models"),
         bed_file= config.get("target_bed", ""),
-        min_mq=5,
-        min_coverage=2
+        min_mq=config.get("clair3_min_mq", 1),
+        min_coverage=config.get("clair3_min_coverage", 1),
+        snp_min_af=config.get("clair3_snp_min_af", 1),
+        indel_min_af=config.get("clair3_indel_min_af", 1),
+        qual=config.get("clair3_qual", 1)
+
+
     threads: 32
     log:
         "{outdir}/logs/{sample}.clair3.log"
@@ -282,104 +289,35 @@ rule clair3_call:
                     /opt/bin/run_clair3.sh \
                       --bam_fn={input.bam} \
                       --ref_fn={input.ref} \
-                      --bed_fn={params.bed_file} \
                       --remove_intermediate_dir \
                       --include_all_ctgs \
                       --longphase_for_phasing \
                       --threads={threads} \
                       --min_mq={params.min_mq} \
                       --min_coverage={params.min_coverage} \
-                      --snp_min_af=0.08 --indel_min_af=0.15 --qual=0 \
+                      --snp_min_af={params.snp_min_af} --indel_min_af={params.indel_min_af} --qual={params.qual} \
                       --platform=ont \
+                      --device='cuda:0' \
                       --model_path=/models/{params.model} \
                       --output {params.outdir}'
-
-        # Normalize/sort/index on host (same paths as inside container)
-        bcftools norm -f {input.ref} -m -both -Oz -o {params.outdir}/clair3.norm.vcf.gz {params.outdir}/merge_output.vcf.gz
-        bcftools sort -Oz -o {output.vcf} {params.outdir}/clair3.norm.vcf.gz
-        tabix -f -p vcf {output.vcf} >> {log} 2>&1
         """
 
-rule medaka_call:
-    input:
-        bam = "{outdir}/alignment/{sample}.sorted.bam",
-        bai = "{outdir}/alignment/{sample}.sorted.bam.bai",
-        ref = config["reference"]
-    output:
-        vcf = "{outdir}/variants/{sample}/medaka.vcf.gz",
-        tbi = "{outdir}/variants/{sample}/medaka.vcf.gz.tbi"
-    params:
-        image = config.get("medaka_docker_image","ontresearch/medaka:latest"),
-        outdir   = "{outdir}/variants/{sample}/medaka",
-        workdir  = os.getcwd(),
-        ref_dir  = dirname(config["reference"]),
-        model    = config.get("medaka_model", "r1041_e82_400bps_sup_variant_v5.0.0"),
-        bed      = config.get("target_bed", ""),    # optional
-    threads: 32
-    log:
-        "{outdir}/logs/{sample}.medaka.log"
-    shell:
-        r"""
-        set -euo pipefail
-        mkdir -p {params.outdir} $(dirname {output.vcf}) $(dirname {log})
-        
-        
-        # Run Medaka inside a container. Use GPU if available; harmless on CPU-only.
-        docker run --rm --gpus "device=all" \
-        -e CUDA_VISIBLE_DEVICES=0,1 \
-          -u $(id -u):$(id -g) \
-          -v {params.workdir}:{params.workdir} \
-          -v {params.ref_dir}:{params.ref_dir} \
-          -w {params.workdir} \
-          {params.image} \
-          bash -lc 'set -euo pipefail
-            inf="{params.outdir}/inference.hdf"
-            mkdir -p {params.outdir}
-            # Resolve a valid VARIANT model inside this container
-            MODEL="{params.model}"
-            if [ -z "$MODEL" ]; then
-              MODEL="$(medaka tools resolve_model --auto_model variant {input.bam} 2>/dev/null || true)"
-            fi
-            if [ -z "$MODEL" ]; then
-              MODEL="$(medaka tools list_models 2>/dev/null | awk '"'"'/variant/{{print $1; exit}}'"'"' || true)"
-            fi
-            if [ -z "$MODEL" ]; then
-              echo "[medaka] ERROR: no variant model available in this image." >&2
-              medaka tools list_models 2>&1 || true
-              exit 2
-            fi
-            echo "[medaka] Using model: $MODEL"
-            # 1) inference
-            medaka inference "{input.bam}" "$inf" --model "$MODEL" --regions "NC_000001.11"
-            echo $inf
-            # 2) vcf  (order: REF  OUT.vcf.gz  HDF...)
-            medaka vcf {input.ref} {params.outdir}/medaka.raw.vcf.gz $inf
-          ' > {log} 2>&1
-
-        # Normalize → sort → index on host
-        bcftools norm -f {input.ref} -m -both -Oz -o {params.outdir}/medaka.norm.vcf.gz {params.outdir}/medaka.raw.vcf.gz
-        bcftools sort -Oz -o {output.vcf} {params.outdir}/medaka.norm.vcf.gz
-        tabix -f -p vcf {output.vcf} >> {log} 2>&1
-            
-        """
-
+# Longshot — small variant calling for ONT
 rule longshot_call:
     input:
         bam = "{outdir}/alignment/{sample}.sorted.bam",
         bai = "{outdir}/alignment/{sample}.sorted.bam.bai",
         ref = config["reference"]
     output:
-        vcf = "{outdir}/variants/{sample}/longshot.vcf.gz",
-        tbi = "{outdir}/variants/{sample}/longshot.vcf.gz.tbi"
+        vcf = "{outdir}/variants/{sample}/longshot/longshot.raw.vcf.gz"
     params:
         image    = config.get("longshot_docker_image", "quay.io/biocontainers/longshot:1.0.0--h8dc4d9d_3"),
         outdir   = "{outdir}/variants/{sample}/longshot",
         workdir  = os.getcwd(),
         ref_dir  = dirname(config["reference"]),
-        bed      = config.get("target_bed", ""),   # optional regions BED
-        min_mq   = int(config.get("longshot_min_mq", 5)),
-        min_af   = config.get("longshot_min_af", 0.08),
-        max_cov  = config.get("longshot_max_cov", 1000),   # set 0 to disable
+        min_mq   = int(config.get("longshot_min_mq", 20)),
+        min_af   = config.get("longshot_min_af", 0.25),
+        max_cov  = config.get("longshot_max_cov", 0),   # set 0 to disable
     threads:6
     log:
         "{outdir}/logs/{sample}.longshot.log"
@@ -387,9 +325,6 @@ rule longshot_call:
         r"""
         set -euo pipefail
         mkdir -p {params.outdir} $(dirname {output.vcf}) $(dirname {log})
-
-        BED_ARG=""
-        if [ -n "{params.bed}" ]; then BED_ARG="--regions_bed {params.bed}"; fi
 
         docker run --rm \
           -u $(id -u):$(id -g) \
@@ -403,39 +338,32 @@ rule longshot_call:
               --bam {input.bam} \
               --ref {input.ref} \
               -A -S \
-              --out {params.outdir}/longshot.raw.vcf \
+              --out {params.outdir}/longshot.raw.vcf.gz \
               --sample_id {wildcards.sample} \
               --min_mapq {params.min_mq} \
-              --min_alt_frac {params.min_af} \
-              --max_cov {params.max_cov} 
+              --min_alt_frac {params.min_af} 
               > {log} 2>&1
-
-            # bgzip + normalize + sort + index
-            bgzip -f -c {params.outdir}/longshot.raw.vcf > {params.outdir}/longshot.raw.vcf.gz
-            bcftools norm -f {input.ref} -m -both -Oz -o {params.outdir}/longshot.norm.vcf.gz {params.outdir}/longshot.raw.vcf.gz
-            bcftools sort -Oz -o {output.vcf} {params.outdir}/longshot.norm.vcf.gz
-            tabix -f -p vcf {output.vcf}
           '
         """
 
 
+# Longshot — small variant calling for ONT
 rule longshot_with_clair_input_call:
     input:
         bam = "{outdir}/alignment/{sample}.sorted.bam",
         bai = "{outdir}/alignment/{sample}.sorted.bam.bai",
-        clair_vcf = "{outdir}/variants/{sample}/clair3.vcf.gz",
+        clair_vcf = "{outdir}/variants/{sample}/clair3/merge_output.vcf.gz",
         ref = config["reference"]
     output:
-        vcf = "{outdir}/variants/{sample}/longshot_clair3.vcf.gz",
-        tbi = "{outdir}/variants/{sample}/longshot_clair3.vcf.gz.tbi"
+        vcf = "{outdir}/variants/{sample}/longshot/longshot_clair3.raw.vcf.gz"
     params:
         image    = config.get("longshot_docker_image", "quay.io/biocontainers/longshot:1.0.0--h8dc4d9d_3"),
         outdir   = "{outdir}/variants/{sample}/longshot",
         workdir  = os.getcwd(),
         ref_dir  = dirname(config["reference"]),
-        min_mq   = int(config.get("longshot_min_mq", 5)),
-        min_af   = config.get("longshot_min_af", 0.08),
-        max_cov  = config.get("longshot_max_cov", 1000),   # set 0 to disable
+        min_mq   = int(config.get("longshot_min_mq", 20)),
+        min_af   = config.get("longshot_min_af", 0.25),
+        max_cov  = config.get("longshot_max_cov", 0),   # set 0 to disable
     threads:6
     log:
         "{outdir}/logs/{sample}.longshot.log"
@@ -457,17 +385,81 @@ rule longshot_with_clair_input_call:
               --ref {input.ref} \
               -A -S \
               -v {input.clair_vcf} \
-              --out {params.outdir}/longshot_clair3.raw.vcf \
+              --out {params.outdir}/longshot_clair3.raw.vcf.gz \
               --sample_id {wildcards.sample} \
               --min_mapq {params.min_mq} \
-              --min_alt_frac {params.min_af} \
-              --max_cov {params.max_cov} 
+              --min_alt_frac {params.min_af} 
               > {log} 2>&1
-
-            # bgzip + normalize + sort + index
-            bgzip -f -c {params.outdir}/longshot_clair3.raw.vcf > {params.outdir}/longshot_clair3.raw.vcf.gz
-            bcftools norm -f {input.ref} -m -both -Oz -o {params.outdir}/longshot_clair3.norm.vcf.gz {params.outdir}/longshot_clair3.raw.vcf.gz
-            bcftools sort -Oz -o {output.vcf} {params.outdir}/longshot_clair3.norm.vcf.gz
-            tabix -f -p vcf {output.vcf}
           '
         """
+
+# Sniffles2 — CNV caller for ONT
+rule sniffles_call:
+    input:
+        bam = "{outdir}/alignment/{sample}.sorted.bam",
+        bai = "{outdir}/alignment/{sample}.sorted.bam.bai",
+        ref = config["reference"]
+    output:
+        vcf = "{outdir}/variants/{sample}/sniffles/sniffles.raw.vcf.gz",
+        snf = "{outdir}/variants/{sample}/sniffles/sniffles.snf"
+    params:
+        image   = config.get("sniffles_docker_image",
+                             "quay.io/biocontainers/sniffles:2.6.3--pyhdfd78af_0"),
+        outdir  = "{outdir}/variants/{sample}/sniffles",
+        workdir = os.getcwd(),
+        ref_dir = dirname(config["reference"]),
+        minsupport = config.get("sniffles_min_support", ""),
+        minsvlen = config.get("sniffles_minsvlen", ""),
+        qc_coverage = config.get("sniffles_qc_coverage", ""),
+        mapq=config.get("sniffles_mapq", ""),
+        sniffles_tandem_repeats_bed=config.get("sniffles_tandem_repeats_bed", "")
+    threads: 32
+    log:
+        "{outdir}/logs/{sample}.sniffles.log"
+    shell:
+        r"""
+        set -euo pipefail
+        mkdir -p {params.outdir} $(dirname {output.vcf}) $(dirname {log})
+
+
+        docker run --rm \
+          -u $(id -u):$(id -g) \
+          -v {params.workdir}:{params.workdir} \
+          -v {params.ref_dir}:{params.ref_dir} \
+          -w {params.workdir} \
+          {params.image} \
+          bash -lc 'set -euo pipefail
+            sniffles \
+              --input "{input.bam}" \
+              --vcf "{params.outdir}/sniffles.raw.vcf.gz" \
+              --snf "{output.snf}" \
+              --reference "{input.ref}" \
+              --minsupport {params.minsupport} \
+              --minsvlen {params.minsvlen} \
+              --mapq {params.mapq} \
+              --qc-coverage {params.qc_coverage} \
+              --threads {threads} 
+          ' > {log} 2>&1
+        """
+
+rule vcf_norm_sort_index:
+    input:
+        vcf="{outdir}/variants/{sample}/{caller}/{caller}.raw.vcf",
+        ref=config["reference"]
+    output:
+        vcf = "{outdir}/variants/{sample}/{caller}/{caller}.norm.sort.vcf.gz",
+        tbi="{outdir}/variants/{sample}/{caller}/{caller}.norm.sort.vcf.gz.tbi"
+    threads: 4
+    log:
+        "{outdir}/logs/{sample}.{caller}.bcftools_norm.log"
+    shell:
+        r"""
+        set -euo pipefail
+        mkdir -p $(dirname {output.vcf}) $(dirname {log})
+
+        # Normalize multi-allelics + left-align against ref → sort → bgzip → index
+        bcftools norm -f {input.ref} -m -both {input.vcf} \
+          | bcftools sort -Oz -o {output.vcf}
+        tabix -f -p vcf {output.vcf} >> {log} 2>&1
+        """
+
