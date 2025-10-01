@@ -15,24 +15,24 @@ target_bed: "/home/mateo/RefGenomes/GCF_000001405.40/gene_anotation.bed"
 # DP=6 this requires ≥2 ALT reads (2/6=0.33), which dramatically reduces
 # single-read SNP false positives that often slip through the defaults (defaults are ~0.08 for SNPs)
 clair3_min_mq: 20
-clair3_min_coverage: 4
-clair3_qual: 8
-clair3_indel_min_af: 0.3
-clair3_snp_min_af: 0.3
+clair3_min_coverage: 5
+clair3_qual: 12
+clair3_indel_min_af: 0.2
+clair3_snp_min_af: 0.25
 
 
 #Longshot
 longshot_docker_image: "quay.io/biocontainers/longshot:1.0.0--h8dc4d9d_3"
-longshot_min_af: 0.25
+longshot_min_af: 0.2
 longshot_max_cov: auto
 longshot_min_mq: 20
 
 #Sniffles2
 sniffles_docker_image: "quay.io/biocontainers/sniffles:2.6.3--pyhdfd78af_0"
-sniffles_min_support : 2
+sniffles_min_support : 3
 sniffles_minsvlen: 50
 sniffles_mapq: 25
-sniffles_qc_coverage : 1
+sniffles_qc_coverage : 2
 sniffles_tandem_repeats_bed: "/home/mateo/RefGenomes/GCF_000001405.40/human_GRCh38_TANDEM_REPEATS.trf.bed"
 
 # Megalodon

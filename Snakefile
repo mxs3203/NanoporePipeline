@@ -61,28 +61,36 @@ rule all:
         expand("{outdir}/alignment/{sample}.sorted.bam", outdir=str(OUTDIR),sample=SAMPLES),
         expand("{outdir}/alignment/{sample}.sorted.bam.bai",outdir=str(OUTDIR),sample=SAMPLES),
         expand("{outdir}/alignment/{sample}.summary.tsv", outdir=str(OUTDIR),sample=SAMPLES),
-        # QC
-        expand("{outdir}/qc/{sample}", outdir=str(OUTDIR),sample=SAMPLES),
-        # stats
-        # expand("{outdir}/coverage/{sample}.mosdepth.summary.txt",sample=SAMPLES,outdir=OUTDIR),
-        # expand("{outdir}/coverage/{sample}.mosdepth.global.dist.txt",  sample=SAMPLES,outdir=OUTDIR),
-        # expand("{outdir}/stats/{sample}.flagstat.txt",sample=SAMPLES,outdir=OUTDIR),
-        # expand("{outdir}/stats/{sample}.stats.txt", sample=SAMPLES,outdir=OUTDIR),
-        # expand("{outdir}/stats/{sample}.idxstats.txt", sample=SAMPLES,outdir=OUTDIR),
-        # expand("{outdir}/coverage/{sample}.chrom_mean.tsv",sample=SAMPLES, outdir=OUTDIR),
-        # expand("{outdir}/coverage/{sample}.run_mean.txt",sample=SAMPLES,outdir=OUTDIR),
+        # QC  AND  stats
+        expand("{outdir}/coverage/{sample}.mosdepth.summary.txt",sample=SAMPLES,outdir=OUTDIR),
+        expand("{outdir}/coverage/{sample}.mosdepth.global.dist.txt",  sample=SAMPLES,outdir=OUTDIR),
+        expand("{outdir}/stats/{sample}.flagstat.txt",sample=SAMPLES,outdir=OUTDIR),
+        expand("{outdir}/stats/{sample}.stats.txt", sample=SAMPLES,outdir=OUTDIR),
+        expand("{outdir}/stats/{sample}.idxstats.txt", sample=SAMPLES,outdir=OUTDIR),
+        expand("{outdir}/coverage/{sample}.chrom_mean.tsv",sample=SAMPLES, outdir=OUTDIR),
+        expand("{outdir}/coverage/{sample}.run_mean.txt",sample=SAMPLES,outdir=OUTDIR),
         # # # variants
-        # expand("{outdir}/variants/{sample}/clair3/merge_output.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
-        # expand("{outdir}/variants/{sample}/longshot/longshot.raw.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
-        # expand("{outdir}/variants/{sample}/longshot/longshot_clair3.raw.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
-        # expand("{outdir}/variants/{sample}/sniffles/sniffles.snf", sample=SAMPLES, outdir=OUTDIR),
-        # variants norm
-        # expand("{outdir}/variants/{sample}/clair3/clair3.norm.sort.vcf.gz", outdir=config["outdir"], sample=SAMPLES),
-        # expand("{outdir}/variants/{sample}/longshot/longshot.norm.sort.vcf.gz", outdir=config["outdir"],sample=SAMPLES),
-        # expand("{outdir}/variants/{sample}/longshot/longshot_clair3.norm.sort.vcf.gz",outdir=config["outdir"],sample=SAMPLES),
-        # expand("{outdir}/variants/{sample}/sniffles/sniffles.norm.sort.vcf.gz",outdir=config["outdir"],sample=SAMPLES),
+        # Clair3
+        expand("{outdir}/variants/{sample}/clair3/merge_output.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
+        expand("{outdir}/variants/{sample}/clair3/merge_output.norm_sort.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
+        # Longshot
+        expand("{outdir}/variants/{sample}/longshot/longshot.raw.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
+        expand("{outdir}/variants/{sample}/longshot/longshot.norm_sort.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
+        # Longshot with clair3 as input
+        expand("{outdir}/variants/{sample}/longshot/longshot_clair3.raw.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
+        expand("{outdir}/variants/{sample}/longshot/longshot_clair3.norm_sort.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
+        # sniffles2
+        expand("{outdir}/variants/{sample}/sniffles/sniffles.snf", sample=SAMPLES, outdir=OUTDIR)
 
-
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
+# MAPPING
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
 '''
 index_ref — Build reference indices once per project.
 Uses minimap2 to create the .mmi and samtools to make the .fai, both written under OUTDIR/ref.
@@ -108,29 +116,6 @@ rule index_ref:
         """
 
 '''
-nanoplot — Read-level QC on the merged FASTQ.
-Runs NanoPlot to produce N50, length/quality plots, and an HTML report under {outdir}/qc/{sample}.
-Outputs a tracked directory so all artifacts are captured.
-'''
-rule nanoplot:
-    input:
-        fq = "{outdir}/reads/{sample}.all.fastq.gz"
-    output:
-        qcdir = directory("{outdir}/qc/{sample}")
-    threads: 4
-    log:
-        "{outdir}/logs/{sample}.nanoplot.log"
-    shell:
-        r"""
-        set -euo pipefail
-        mkdir -p {output.qcdir} $(dirname {log})
-        NanoPlot --fastq {input.fq} \
-                 --outdir {output.qcdir} \
-                 --threads {threads} \
-                 --N50 --verbose > {log} 2>&1
-        """
-
-'''
 align_dorado — Map ONT reads and produce a sorted BAM in one pass.
 Uses the minimap2 .mmi (map-ont with tuned params) and pipes to samtools sort → {outdir}/alignment/{sample}.sorted.bam.
 Threaded; stderr goes to a per-sample log for debugging.
@@ -143,7 +128,9 @@ rule align_dorado:
         # point this to your per-sample basecalled reads directory
         # e.g. config.yaml: dorado_dir: "/mnt/.../UltraLong"
         reads_dir = lambda wc: join(config["data_root"], wc.sample, "basecalling", "pass"),
-        tmpdir    = "{outdir}/alignment/{sample}.dorado_tmp"
+        tmpdir    = "{outdir}/alignment/{sample}.dorado_tmp",
+        mm2_extra = "-Y",
+        rg= lambda wc: f"@RG\tID:{wc.sample}\tSM:{wc.sample}\tPL:ONT"
     output:
         bam        = "{outdir}/alignment/{sample}.bam",
         sorted_bam = "{outdir}/alignment/{sample}.sorted.bam",
@@ -158,11 +145,13 @@ rule align_dorado:
         mkdir -p {params.tmpdir} $(dirname {output.bam}) $(dirname {log})
 
         # 1) Align: when INPUT is a directory, dorado requires --output-dir
-        dorado aligner {input.ref} "{params.reads_dir}" --output-dir "{params.tmpdir}" >> {log} 2>&1
+        dorado aligner {input.ref} "{params.reads_dir}" \
+          --mm2-opts "{params.mm2_extra}" \
+          --output-dir "{params.tmpdir}" >> {log} 2>&1
 
         # 2) Merge Dorado's chunked BAMs into a single BAM
         samtools merge -@ {threads} -o {output.bam} {params.tmpdir}/*.bam >> {log} 2>&1
-
+        
         # 3) Sort & index
         samtools sort -@ {threads} -o {output.sorted_bam} {output.bam} >> {log} 2>&1
         samtools index -@ {threads} {output.sorted_bam} >> {log} 2>&1
@@ -173,6 +162,16 @@ rule align_dorado:
         # 5) Clean
         rm -rf "{params.tmpdir}"
         """
+
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
+# STATS and QC
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
 
 '''
 mosdepth_coverage — Compute per-sample coverage summaries with mosdepth.
@@ -209,6 +208,7 @@ rule mosdepth_coverage:
         awk 'NR>1 && tolower($1)!="total" {{L+=$2; S+=$2*$4}} END{{if(L>0) printf("%.6f\n", S/L); else print "NA"}}' \
             {output.summary} > {output.run_mean}
         """
+
 '''
 mapping_stats — Generate mapping QC with samtools.
 Writes flagstat, stats, and idxstats text files under {outdir}/stats/ for each sample (MultiQC-friendly).
@@ -233,12 +233,31 @@ rule mapping_stats:
         samtools stats    -@ {threads} {input.bam} > {output.stats}
         samtools idxstats               {input.bam} > {output.idx}
         """
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
+# Methylation
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
 
 
-# ==============================================
+
+
+
+
+
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
 # Variant calling
-# ==============================================
-
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
 # Clair3 — small variant calling for ONT
 rule clair3_call:
     input:
@@ -246,7 +265,8 @@ rule clair3_call:
         bai = "{outdir}/alignment/{sample}.sorted.bam.bai",
         ref = config["reference"]
     output:
-        vcf = "{outdir}/variants/{sample}/clair3/merge_output.vcf.gz"
+        vcf = "{outdir}/variants/{sample}/clair3/merge_output.vcf.gz",
+        vcf_sorted = "{outdir}/variants/{sample}/clair3/merge_output.norm_sort.vcf.gz"
     params:
         image   = config.get("clair3_docker_image", "hkubal/clair3:latest"),
         gpus    = config.get("clair3_gpus", "0"),
@@ -261,8 +281,6 @@ rule clair3_call:
         snp_min_af=config.get("clair3_snp_min_af", 1),
         indel_min_af=config.get("clair3_indel_min_af", 1),
         qual=config.get("clair3_qual", 1)
-
-
     threads: 32
     log:
         "{outdir}/logs/{sample}.clair3.log"
@@ -300,6 +318,9 @@ rule clair3_call:
                       --device='cuda:0' \
                       --model_path=/models/{params.model} \
                       --output {params.outdir}'
+                      
+          bcftools norm -f {input.ref} -m -both {output.vcf} | bcftools sort -Oz -o {output.vcf_sorted}
+          tabix -f -p vcf {output.vcf_sorted} >> {log} 2>&1
         """
 
 # Longshot — small variant calling for ONT
@@ -309,7 +330,8 @@ rule longshot_call:
         bai = "{outdir}/alignment/{sample}.sorted.bam.bai",
         ref = config["reference"]
     output:
-        vcf = "{outdir}/variants/{sample}/longshot/longshot.raw.vcf.gz"
+        vcf = "{outdir}/variants/{sample}/longshot/longshot.raw.vcf.gz",
+        vcf_sorted = "{outdir}/variants/{sample}/longshot/longshot.norm_sort.vcf.gz"
     params:
         image    = config.get("longshot_docker_image", "quay.io/biocontainers/longshot:1.0.0--h8dc4d9d_3"),
         outdir   = "{outdir}/variants/{sample}/longshot",
@@ -344,6 +366,9 @@ rule longshot_call:
               --min_alt_frac {params.min_af} 
               > {log} 2>&1
           '
+          
+        bcftools norm -f {input.ref} -m -both {output.vcf} | bcftools sort -Oz -o {output.vcf_sorted}
+        tabix -f -p vcf {output.vcf_sorted} >> {log} 2>&1
         """
 
 
@@ -355,7 +380,8 @@ rule longshot_with_clair_input_call:
         clair_vcf = "{outdir}/variants/{sample}/clair3/merge_output.vcf.gz",
         ref = config["reference"]
     output:
-        vcf = "{outdir}/variants/{sample}/longshot/longshot_clair3.raw.vcf.gz"
+        vcf = "{outdir}/variants/{sample}/longshot/longshot_clair3.raw.vcf.gz",
+        vcf_sorted = "{outdir}/variants/{sample}/longshot/longshot_clair3.norm_sort.vcf.gz"
     params:
         image    = config.get("longshot_docker_image", "quay.io/biocontainers/longshot:1.0.0--h8dc4d9d_3"),
         outdir   = "{outdir}/variants/{sample}/longshot",
@@ -391,8 +417,19 @@ rule longshot_with_clair_input_call:
               --min_alt_frac {params.min_af} 
               > {log} 2>&1
           '
+          bcftools norm -f {input.ref} -m -both {output.vcf} | bcftools sort -Oz -o {output.vcf_sorted}
+          tabix -f -p vcf {output.vcf_sorted} >> {log} 2>&1
         """
 
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
+# CNV
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
+# ===========================================================================================================================================================
 # Sniffles2 — CNV caller for ONT
 rule sniffles_call:
     input:
@@ -442,24 +479,7 @@ rule sniffles_call:
           ' > {log} 2>&1
         """
 
-rule vcf_norm_sort_index:
-    input:
-        vcf="{outdir}/variants/{sample}/{caller}/{caller}.raw.vcf",
-        ref=config["reference"]
-    output:
-        vcf = "{outdir}/variants/{sample}/{caller}/{caller}.norm.sort.vcf.gz",
-        tbi="{outdir}/variants/{sample}/{caller}/{caller}.norm.sort.vcf.gz.tbi"
-    threads: 4
-    log:
-        "{outdir}/logs/{sample}.{caller}.bcftools_norm.log"
-    shell:
-        r"""
-        set -euo pipefail
-        mkdir -p $(dirname {output.vcf}) $(dirname {log})
 
-        # Normalize multi-allelics + left-align against ref → sort → bgzip → index
-        bcftools norm -f {input.ref} -m -both {input.vcf} \
-          | bcftools sort -Oz -o {output.vcf}
-        tabix -f -p vcf {output.vcf} >> {log} 2>&1
-        """
+
+
 
