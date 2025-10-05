@@ -4,6 +4,14 @@ data_root: "/mnt/wwn-0x5002538f42211069-part2/AlgebraBioinfLab/SequencingData/Ul
 outdir: "/home/mateo/PycharmProjects/NanoporePipeline/OUTPUT"
 fastq_subpath: "basecalling/pass"
 
+# Methylation calling with modkit
+modkit_threshold_c: "C:0.98"
+modkit_threshold_a: "A:0.98"
+modkit_docker: "ontresearch/modkit:latest"
+modkit_interval_bp: 100000
+promotors_bed_file: "/home/mateo/RefGenomes/GCF_000001405.40/promoters_1kb.pc.bed"
+modkit_chunk_intervals: 6
+
 
 # Clair3 Config
 clair3_docker_image: "hkubal/clair3:latest"
@@ -34,10 +42,3 @@ sniffles_minsvlen: 50
 sniffles_mapq: 25
 sniffles_qc_coverage : 2
 sniffles_tandem_repeats_bed: "/home/mateo/RefGenomes/GCF_000001405.40/human_GRCh38_TANDEM_REPEATS.trf.bed"
-
-# Megalodon
-fast5_dir: ""
-megalodon_venv: "/home/mateo/venvs/megalodon-2_5"   # your Python 3.10 venv from Option B
-guppy_server_path: "/opt/ont/ont-guppy/bin/guppy_basecall_server"
-guppy_config: "dna_r10.4.1_e8.2_400bps_sup.cfg"
-megalodon_mod_motifs: ["m", "CG", 0]

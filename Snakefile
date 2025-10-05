@@ -69,16 +69,21 @@ rule all:
         expand("{outdir}/stats/{sample}.idxstats.txt", sample=SAMPLES,outdir=OUTDIR),
         expand("{outdir}/coverage/{sample}.chrom_mean.tsv",sample=SAMPLES, outdir=OUTDIR),
         expand("{outdir}/coverage/{sample}.run_mean.txt",sample=SAMPLES,outdir=OUTDIR),
+        # Methylation
+        expand("{outdir}/mods/{sample}.per_read_calls.tsv", sample=SAMPLES, outdir=OUTDIR),
+        expand("{outdir}/mods/{sample}.5mC.CpG.bed", sample=SAMPLES, outdir=OUTDIR),
+        expand("{outdir}/mods/{sample}.promoter_methylation.csv", sample=SAMPLES, outdir=OUTDIR),
+
         # # # variants
         # Clair3
         expand("{outdir}/variants/{sample}/clair3/merge_output.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
         expand("{outdir}/variants/{sample}/clair3/merge_output.norm_sort.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
-        # Longshot
-        expand("{outdir}/variants/{sample}/longshot/longshot.raw.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
-        expand("{outdir}/variants/{sample}/longshot/longshot.norm_sort.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
-        # Longshot with clair3 as input
-        expand("{outdir}/variants/{sample}/longshot/longshot_clair3.raw.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
-        expand("{outdir}/variants/{sample}/longshot/longshot_clair3.norm_sort.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
+        # # Longshot
+        # expand("{outdir}/variants/{sample}/longshot/longshot.raw.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
+        # expand("{outdir}/variants/{sample}/longshot/longshot.norm_sort.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
+        # # Longshot with clair3 as input
+        # expand("{outdir}/variants/{sample}/longshot/longshot_clair3.raw.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
+        # expand("{outdir}/variants/{sample}/longshot/longshot_clair3.norm_sort.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
         # sniffles2
         expand("{outdir}/variants/{sample}/sniffles/sniffles.snf", sample=SAMPLES, outdir=OUTDIR)
 
@@ -237,16 +242,132 @@ rule mapping_stats:
 # ===========================================================================================================================================================
 # ===========================================================================================================================================================
 # Methylation
+# 5mC (CpG) in human WBCs is abundant and informative for regulation (especially around promoters/TSS).
+# 6mA in mammals is rare/controversial at genomic scale—treat as exploratory.
+# 4mC in human is generally not expected; likely negligible with standard models (watch for artifacts).
+# Focus first on 5mC in CpG context (--cpg you already ran).
+# Coverage filter: keep sites with N_valid_cov ≥ 5 (or ≥10 if you have depth to spare).
+# Get a GRCh38.p14 gene annotation (GTF). (GENCODE is clean and current for hg38/GRCh38.p14.)
+# GENCODE
+# Build a promoter BED (e.g., TSS ±1 kb, strand-aware).
+# Intersect CpG sites (filtered) with promoters.
+# Compute coverage-weighted promoter methylation per gene:
+# weighted_mean = sum(fraction * N_valid_cov) / sum(N_valid_cov)
+# Flag genes with weighted_mean ≥ 0.6 and sum coverage ≥ 25 (example cutoffs; tune to your data).
+# If you ran modkit pileup for --motif A 0 --mod-codes a (6mA) or --motif C 0 --mod-codes c (4mC), you’ll get analogous bedMethyl.
+# Analyze the same way (filter by coverage, aggregate to promoters/genes).
+# Interpret with caution in human WBC—bulk 6mA evidence is limited; many signals are near repeats or aligner artifacts.
 # ===========================================================================================================================================================
 # ===========================================================================================================================================================
 # ===========================================================================================================================================================
 # ===========================================================================================================================================================
 # ===========================================================================================================================================================
+rule modkit_pileup_5mc_cpg:
+    input:
+        bam = "{outdir}/alignment/{sample}.sorted.bam",
+        bai = "{outdir}/alignment/{sample}.sorted.bam.bai",
+        ref = config["reference"]
+    output:
+        bed = "{outdir}/mods/{sample}.5mC.CpG.bed"
+    params:
+        modkit_thrs = config.get("modkit_threshold_c", "C:0.85"),
+        workdir=os.getcwd(),
+        isz= config.get("modkit_interval_bp", 50000),
+        csize=config.get("modkit_chunk_intervals", 8),
+        outdir="{outdir}/mods/",
+        ref_dir=dirname(config["reference"]),
+        image=config.get("modkit_docker","ontresearch/modkit:latest"),
+        promotors_bed_file= config.get("promotors_bed_file")
+    threads: 16
+    log:
+        "{outdir}/logs/{sample}.modkit_5mc_cpg.log"
+    shell:
+        r"""
+        set -euo pipefail
+        mkdir -p $(dirname {output.bed}) $(dirname {log})
+        docker run --rm -u $(id -u):$(id -g) \
+          -v {params.workdir}:{params.workdir} \
+          -v {params.ref_dir}:{params.ref_dir} \
+          -v {params.outdir}:{params.outdir} \
+          -w {params.workdir} \
+          {params.image} \
+          modkit pileup {input.bam} {output.bed} \
+          --mod-thresholds {params.modkit_thrs} \
+          --include-bed {params.promotors_bed_file} \
+          --interval-size {params.isz} \
+          --chunk-size {params.csize} \
+          --cpg --ref {input.ref} -t {threads} \
+          > {log} 2>&1
+        """
 
+# ---- Per-read calls table (for haplotype or downstream stats) ----
+rule modkit_extract_per_read:
+    input:
+        bam = "{outdir}/alignment/{sample}.sorted.bam",
+        bai = "{outdir}/alignment/{sample}.sorted.bam.bai",
+        ref = config["reference"]
+    output:
+        tsv = "{outdir}/mods/{sample}.per_read_calls.tsv",
+        read_path = "{outdir}/mods/{sample}.read_table.tsv"
+    params:
+        workdir= os.getcwd(),
+        outdir= "{outdir}/mods/",
+        ref_dir= dirname(config["reference"]),
+        image= config.get("modkit_docker","ontresearch/modkit:latest"),
+        promotors_bed_file = config.get("promotors_bed_file")
+    threads: 8
+    log:
+        "{outdir}/logs/{sample}.modkit_extract.log"
+    shell:
+        r"""
+        set -euo pipefail
+        mkdir -p $(dirname {output.tsv}) $(dirname {log})
+        
+        docker run --rm -u $(id -u):$(id -g) \
+          -v {params.workdir}:{params.workdir} \
+          -v {params.ref_dir}:{params.ref_dir} \
+          -v {params.outdir}:{params.outdir} \
+          -w {params.workdir} \
+          {params.image} \
+          modkit extract -t {threads} \
+          --read-calls-path {output.read_path} \
+          --filter-percentile 0.9 \
+          --queue-size 10000 \
+          --interval-size 100000 \
+          --mapped-only \
+          --include-bed {params.promotors_bed_file} \
+          --pass-only \
+          --reference {input.ref} {input.bam} {output.tsv}
+        """
 
-
-
-
+"""
+    Compute coverage-weighted promoter CpG methylation from modkit pileup (--cpg).
+    Output columns: gene, methylation_weighted_pct, num_cpgs, total_coverage
+"""
+rule gene_promoter_methylation:
+    input:
+        bed = "{outdir}/mods/{sample}.5mC.CpG.bed",
+        fai = str(OUTDIR / "ref" / f"{REF_BASENAME}.fai")
+    output:
+        csv = "{outdir}/mods/{sample}.promoter_methylation.csv"
+    params:
+        promotors_bed_file = config.get("promotors_bed_file")
+    threads: 8
+    log:
+        "{outdir}/logs/{sample}.mod_promotor_methylation.log"
+    shell:
+        r"""
+        mkdir -p $(dirname {output.csv})
+        
+        bedtools map -g {input.fai} -sorted \
+          -a <(bedtools sort -g {input.fai} -i {params.promotors_bed_file}) \
+          -b <(bedtools sort -g {input.fai} -i {input.bed}) \
+          -c 1,12,10 -o count,sum,sum \
+        | awk 'BEGIN{{OFS=","; print "gene,methylation_weighted_pct,num_cpgs,total_coverage"}}
+               {{count=$(NF-2); sum_m=$(NF-1); sum_c=$NF; pct=(sum_c>0?100*sum_m/sum_c:0);
+                 print $4, sprintf("%.2f", pct), count, sum_c}}' \
+        > {output.csv}
+        """
 
 
 # ===========================================================================================================================================================
@@ -319,8 +440,6 @@ rule clair3_call:
                       --model_path=/models/{params.model} \
                       --output {params.outdir}'
                       
-          bcftools norm -f {input.ref} -m -both {output.vcf} | bcftools sort -Oz -o {output.vcf_sorted}
-          tabix -f -p vcf {output.vcf_sorted} >> {log} 2>&1
         """
 
 # Longshot — small variant calling for ONT
@@ -366,9 +485,10 @@ rule longshot_call:
               --min_alt_frac {params.min_af} 
               > {log} 2>&1
           '
-          
-        bcftools norm -f {input.ref} -m -both {output.vcf} | bcftools sort -Oz -o {output.vcf_sorted}
-        tabix -f -p vcf {output.vcf_sorted} >> {log} 2>&1
+          awk 'BEGIN{{OFS="\t"}}
+             /^##INFO=<ID=PH,Number=/ {{ sub(/Number=[^,]+/,"Number=."); print; next }}
+             {{ print }}' \
+             {params.outdir}/longshot.raw.vcf > {params.outdir}/longshot.phfix.vcf
         """
 
 

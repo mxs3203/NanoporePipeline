@@ -4,15 +4,23 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="034ef7d0-52d0-4e62-91f0-3a71443dd95f" name="Changes" comment="Fixed errors with paths, longshot, clair3 and sniffles2 work. minimap2 was replaced with dorado mapper (which also uses minimap2)">
+    <list default="true" id="034ef7d0-52d0-4e62-91f0-3a71443dd95f" name="Changes" comment="fixed mapping with dorado, removed QC for now as it requires annoying changes. coverage is now as expected and clair3 is working.  Norm and sort of VCF is moved back to each of variant callers. Proceding to methylation calling">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Snakefile" beforeDir="false" afterPath="$PROJECT_DIR$/Snakefile" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/TODO" beforeDir="false" afterPath="$PROJECT_DIR$/TODO" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/config.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/config.yaml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Python Script" />
+      </list>
+    </option>
   </component>
   <component name="FlaskConsoleOptions" custom-start-script="import sys&#10;sys.path.extend([WORKING_DIR_AND_PYTHON_PATHS])&#10;from flask.cli import ScriptInfo&#10;locals().update(ScriptInfo(create_app=None).load_app().make_shell_context())&#10;print(&quot;Python %s on %s\nApp: %s [%s]\nInstance: %s&quot; % (sys.version, sys.platform, app.import_name, app.env, app.instance_path))">
     <envs>
@@ -144,7 +152,8 @@
       <workItem from="1759215116095" duration="8969000" />
       <workItem from="1759305004165" duration="8099000" />
       <workItem from="1759313110255" duration="7018000" />
-      <workItem from="1759330386006" duration="2669000" />
+      <workItem from="1759330386006" duration="36546000" />
+      <workItem from="1759688592356" duration="3733000" />
     </task>
     <task id="LOCAL-00001" summary="Init">
       <option name="closed" value="true" />
@@ -210,7 +219,15 @@
       <option name="project" value="LOCAL" />
       <updated>1759316772575</updated>
     </task>
-    <option name="localTasksCounter" value="9" />
+    <task id="LOCAL-00009" summary="fixed mapping with dorado, removed QC for now as it requires annoying changes. coverage is now as expected and clair3 is working.  Norm and sort of VCF is moved back to each of variant callers. Proceding to methylation calling">
+      <option name="closed" value="true" />
+      <created>1759333673068</created>
+      <option name="number" value="00009" />
+      <option name="presentableId" value="LOCAL-00009" />
+      <option name="project" value="LOCAL" />
+      <updated>1759333673068</updated>
+    </task>
+    <option name="localTasksCounter" value="10" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -225,7 +242,8 @@
     <MESSAGE value="Medaka seems to be working..." />
     <MESSAGE value="Longshot is wokrking. Made two rules, one which creates VCF from scratch and another one which uses Clair3 as &quot;potential variants&quot;" />
     <MESSAGE value="Fixed errors with paths, longshot, clair3 and sniffles2 work. minimap2 was replaced with dorado mapper (which also uses minimap2)" />
-    <option name="LAST_COMMIT_MESSAGE" value="Fixed errors with paths, longshot, clair3 and sniffles2 work. minimap2 was replaced with dorado mapper (which also uses minimap2)" />
+    <MESSAGE value="fixed mapping with dorado, removed QC for now as it requires annoying changes. coverage is now as expected and clair3 is working.  Norm and sort of VCF is moved back to each of variant callers. Proceding to methylation calling" />
+    <option name="LAST_COMMIT_MESSAGE" value="fixed mapping with dorado, removed QC for now as it requires annoying changes. coverage is now as expected and clair3 is working.  Norm and sort of VCF is moved back to each of variant callers. Proceding to methylation calling" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/NanoporePipeline$Snakefile.coverage" NAME="Snakefile Coverage Results" MODIFIED="1754638032814" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />

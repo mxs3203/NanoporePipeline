@@ -13,3 +13,54 @@ I've analyzed my own WGS too like 7 years ago. I've run a bunch of analysis and 
  both GRCh37 and GRCh38 after trimming with AlienTrimmer and Trimmomatic. I even aligned it with the T2T_CHM13_v2 but there is
  little clinical annotation available for that so nothing much was annotated against this assembly.
 A couple of years ago, I additionally analyzed it through SMNCopyNumberCaller.
+
+
+
+Make a promoter BED (from GENCODE GTF):
+
+# Inputs
+GTF=gencode.v45.annotation.gtf    # GRCh38.p14
+PROM=ref/promoters_1kb.bed
+mkdir -p ref
+
+# Build strand-aware TSS ±1000 bp promoters
+awk 'BEGIN{FS=OFS="\t"}
+ $3=="gene"{
+   gene_id=""; gene_name="";
+   n=split($9,a,";");
+   for(i=1;i<=n;i++){
+     gsub(/^ +/,"",a[i]);
+     if(a[i]~/(^| )gene_id /){ split(a[i],b," "); gsub(/"/,"",b[2]); gene_id=b[2] }
+     if(a[i]~/(^| )gene_name /){ split(a[i],b," "); gsub(/"/,"",b[2]); gene_name=b[2] }
+   }
+   if($7=="+"){ tss=$4-1 } else { tss=$5-1 }
+   start=tss-1000; if(start<0)start=0; end=tss+1000;
+   print $1, start, end, gene_id";"gene_name, 0, $7
+ }' "$GTF" | sort -k1,1 -k2,2n > "$PROM"
+
+
+
+ Compute promoter methylation per gene (coverage-weighted):
+
+CPG=OUT/mods/SAM1.5mC.CpG.bed.gz
+
+# Intersect CpG bedMethyl with promoters; accumulate weighted means
+bedtools intersect -a <(zcat "$CPG" | awk 'BEGIN{FS=OFS="\t"} $10>=5') -b "$PROM" -wa -wb \
+| awk 'BEGIN{FS=OFS="\t"}
+{
+  gene=$13;            # 13th col is "gene_id;gene_name" from promoters_1kb.bed
+  cov=$10;             # N_valid_cov from modkit bedMethyl
+  frac=$11;            # fraction from modkit bedMethyl
+  wc[gene]+=cov;       # total coverage
+  wf[gene]+=cov*frac;  # coverage-weighted sum
+  n[gene]++            # CpG count
+}
+END{
+  print "gene_id;gene_name","n_cpg","cov_sum","weighted_frac";
+  for(g in wc) if(wc[g]>0) printf "%s\t%d\t%d\t%.6f\n", g, n[g], wc[g], wf[g]/wc[g];
+}' \
+| sort -t$'\t' -k4,4nr > SAM1.promoter_1kb.CpG5mC.tsv
+
+# Example “likely repressed” filter (tune thresholds!)
+awk 'BEGIN{FS=OFS="\t"} NR>1 && $2>=5 && $3>=25 && $4>=0.6' \
+  SAM1.promoter_1kb.CpG5mC.tsv > SAM1.promoter_hypermethylated.tsv
