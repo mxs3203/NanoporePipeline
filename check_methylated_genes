@@ -1,0 +1,45 @@
+1. Smoking, cardiovascular & pulmonary risk
+
+| Gene / Locus           | Biological Role / Context                                   | Methylation Change                                                                | Evidence / Reference                                                                                     |
+| ---------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| **AHRR (cg05575921)**  | Aryl hydrocarbon receptor repressor; detox & smoke response | **Hypomethylation** in smokers → ↑ risk for CVD, lung cancer, all-cause mortality | Philibert et al., *Circulation: Cardiovascular Genetics*, 2016; Zeilinger et al., *Am J Hum Genet*, 2013 |
+| **F2RL3 (cg03636183)** | Coagulation / platelet activation                           | **Hypomethylation** with smoking; predicts **mortality & lung-cancer risk**       | Zhang et al., *Clin Epigenetics*, 2016                                                                   |
+| **GPR15**              | T-cell trafficking; smoking marker                          | **Hypomethylation** in smokers; elevated expression in blood                      | Bauer et al., *Epigenomics*, 2015                                                                        |
+| **MYO1G**              | Membrane-related myosin; smoking biomarker                  | **Hypermethylation** in smokers (reverse to AHRR)                                 | Joehanes et al., *Circ Cardiovasc Genet*, 2016                                                           |
+| **CYP1A1 / CYP1B1**    | Xenobiotic metabolism; PAH detox                            | **Hypo/Hyper-methylation** with smoking & air-pollution exposure                  | Reynolds et al., *Environ Health Perspect*, 2017                                                         |
+
+2. Cardiometabolic & diabetes risk
+| Gene / Locus          | Function                       | Methylation Change                                           | Evidence                           |
+| --------------------- | ------------------------------ | ------------------------------------------------------------ | ---------------------------------- |
+| **ABCG1**             | Cholesterol efflux transporter | **Hypermethylation** → ↑ T2D, insulin resistance             | Dayeh et al., *Diabetes*, 2016     |
+| **TXNIP**             | Glucose-redox regulation       | **Hypomethylation** → predicts **hyperglycemia & T2D onset** | Chambers et al., *Diabetes*, 2015  |
+| **PHOSPHO1**          | Phosphate metabolism           | Lower methylation → protective (inverse of ABCG1)            | Dayeh et al., *Diabetes*, 2016     |
+| **SREBF1**, **SOCS3** | Lipid / insulin signaling      | Differential methylation → insulin resistance, BMI           | Chambers et al., *Nat Genet*, 2015 |
+| **CPT1A**             | Fatty acid β-oxidation enzyme  | **Hypomethylation** linked to ↑ triglycerides, CVD           | Irvin et al., *Nat Commun*, 2014   |
+| **HIF3A**             | Hypoxia-induced TF             | **Hypermethylation** correlates with ↑ BMI / obesity         | Dick et al., *Lancet*, 2014        |
+| **LEP / LEPR**        | Leptin signaling               | Altered methylation → obesity, insulin resistance            | Milagro et al., *FASEB J*, 2011    |
+
+3. Stress, aging & neuropsychiatric traits
+| Gene / Locus                    | Function                                      | Methylation Pattern                                                               | Reference                                          |
+| ------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------- |
+| **NR3C1**                       | Glucocorticoid receptor (stress response)     | **Hypermethylation** after chronic stress / trauma → altered HPA axis             | Palma-Gudiel et al., *Neurosci Biobehav Rev*, 2015 |
+| **BDNF**                        | Neuroplasticity                               | Differential methylation in depression, PTSD                                      | Keller et al., *Epigenomics*, 2017                 |
+| **SLC6A4**                      | Serotonin transporter                         | Stress- and trauma-related methylation variation                                  | Palma-Gudiel et al., *Neurosci Biobehav Rev*, 2015 |
+| **ELOVL2**                      | Aging clock marker                            | **Hypermethylation increases with age** → robust biological age predictor         | Garagnani et al., *Aging Cell*, 2012               |
+| **FHL2**, **KLF14**, **TRIM59** | DNAm aging markers (Horvath clock components) | Site-specific hypermethylation correlates with chronological age and disease risk | Horvath, *Genome Biol*, 2013                       |
+
+4. Cancer risk & epimutations detectable in blood
+| Gene / Locus                  | Associated Cancer / Mechanism           | Blood-DNA Methylation Observation                                               | Reference                                                             |
+| ----------------------------- | --------------------------------------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| **BRCA1**                     | Breast / ovarian                        | Rare **constitutional promoter hypermethylation** in leukocytes → elevated risk | Dobrovic & Wong, *Nat Genet*, 1999; Evans et al., *J Med Genet*, 2018 |
+| **MLH1**, **MGMT**            | Colorectal / glioma                     | Germline-like promoter methylation in blood sometimes precedes cancer           | Hitchins et al., *Gastroenterology*, 2011                             |
+| **SEPT9**                     | Colorectal (FDA-approved plasma marker) | **Hypermethylated** in cfDNA and leukocytes in CRC                              | Lofton-Day et al., *Clin Chem*, 2008                                  |
+| **RASSF1A**, **CDKN2A (p16)** | Multiple cancers                        | Blood promoter methylation correlates with tumor presence / risk                | Shivapurkar et al., *Cancer Res*, 2006                                |
+
+
+5. Environmental & toxic exposures
+| Gene / Locus           | Exposure                               | Methylation Pattern                                 | Reference                                        |
+| ---------------------- | -------------------------------------- | --------------------------------------------------- | ------------------------------------------------ |
+| **ALDH2**, **ADH1B**   | Alcohol use                            | Promoter methylation changes reflect chronic intake | Zhang et al., *Epigenomics*, 2013                |
+| **GSTP1**, **GSTM1**   | Oxidative stress / xenobiotic response | Differential methylation with heavy-metal exposure  | Pavanello et al., *Environ Res*, 2018            |
+| **METTL7B**, **LCE3D** | Air pollution (PM2.5)                  | Altered blood methylation                           | Plusquin et al., *Environ Health Perspect*, 2022 |
