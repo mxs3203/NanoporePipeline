@@ -62,30 +62,30 @@ rule all:
         expand("{outdir}/alignment/{sample}.sorted.bam.bai",outdir=str(OUTDIR),sample=SAMPLES),
         expand("{outdir}/alignment/{sample}.summary.tsv", outdir=str(OUTDIR),sample=SAMPLES),
         # QC  AND  stats
-        expand("{outdir}/coverage/{sample}.mosdepth.summary.txt",sample=SAMPLES,outdir=OUTDIR),
-        expand("{outdir}/coverage/{sample}.mosdepth.global.dist.txt",  sample=SAMPLES,outdir=OUTDIR),
-        expand("{outdir}/stats/{sample}.flagstat.txt",sample=SAMPLES,outdir=OUTDIR),
-        expand("{outdir}/stats/{sample}.stats.txt", sample=SAMPLES,outdir=OUTDIR),
-        expand("{outdir}/stats/{sample}.idxstats.txt", sample=SAMPLES,outdir=OUTDIR),
-        expand("{outdir}/coverage/{sample}.chrom_mean.tsv",sample=SAMPLES, outdir=OUTDIR),
-        expand("{outdir}/coverage/{sample}.run_mean.txt",sample=SAMPLES,outdir=OUTDIR),
+        expand("{outdir}/coverage/{sample}.mosdepth.summary.txt",sample=SAMPLES,outdir=str(OUTDIR)),
+        expand("{outdir}/coverage/{sample}.mosdepth.global.dist.txt",  sample=SAMPLES,outdir=str(OUTDIR)),
+        expand("{outdir}/stats/{sample}.flagstat.txt",sample=SAMPLES,outdir=str(OUTDIR)),
+        expand("{outdir}/stats/{sample}.stats.txt", sample=SAMPLES,outdir=str(OUTDIR)),
+        expand("{outdir}/stats/{sample}.idxstats.txt", sample=SAMPLES,outdir=str(OUTDIR)),
+        expand("{outdir}/coverage/{sample}.chrom_mean.tsv",sample=SAMPLES, outdir=str(OUTDIR)),
+        expand("{outdir}/coverage/{sample}.run_mean.txt",sample=SAMPLES,outdir=str(OUTDIR)),
         # Methylation
-        expand("{outdir}/mods/{sample}.per_read_calls.tsv", sample=SAMPLES, outdir=OUTDIR),
-        expand("{outdir}/mods/{sample}.5mC.CpG.bed", sample=SAMPLES, outdir=OUTDIR),
-        expand("{outdir}/mods/{sample}.promoter_methylation.csv", sample=SAMPLES, outdir=OUTDIR),
-
+        expand("{outdir}/mods/{sample}.per_read_calls.tsv",sample=SAMPLES,outdir=str(OUTDIR)),
+        expand("{outdir}/mods/{sample}.read_table.tsv",sample=SAMPLES,outdir=str(OUTDIR)),
+        expand("{outdir}/mods/{sample}.5mC.CpG.bed",sample=SAMPLES,outdir=str(OUTDIR)),
+        expand("{outdir}/mods/{sample}.promoter_methylation.csv",sample=SAMPLES,outdir=str(OUTDIR)),
+        expand("{outdir}/mods/{sample}.promoter_methylation.clean.csv",sample=SAMPLES,outdir=str(OUTDIR)),
+        expand("{outdir}/mods/{sample}.promoter_methylation.clean.annotated.csv", sample=SAMPLES, outdir=str(OUTDIR)),
+        expand("{outdir}/mods/{sample}.promoter_methylation.clean.annotated.PDF", sample=SAMPLES, outdir=str(OUTDIR)),
         # # # variants
         # Clair3
-        expand("{outdir}/variants/{sample}/clair3/merge_output.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
-        expand("{outdir}/variants/{sample}/clair3/merge_output.norm_sort.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
-        # # Longshot
-        # expand("{outdir}/variants/{sample}/longshot/longshot.raw.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
-        # expand("{outdir}/variants/{sample}/longshot/longshot.norm_sort.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
+        expand("{outdir}/variants/{sample}/clair3/merge_output.vcf.gz", sample=SAMPLES, outdir=str(OUTDIR)),
+        expand("{outdir}/variants/{sample}/clair3/merge_output.norm_sort.vcf.gz", sample=SAMPLES, outdir=str(OUTDIR)),
         # # Longshot with clair3 as input
         # expand("{outdir}/variants/{sample}/longshot/longshot_clair3.raw.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
         # expand("{outdir}/variants/{sample}/longshot/longshot_clair3.norm_sort.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
         # sniffles2
-        expand("{outdir}/variants/{sample}/sniffles/sniffles.snf", sample=SAMPLES, outdir=OUTDIR)
+        expand("{outdir}/variants/{sample}/sniffles/sniffles.snf", sample=SAMPLES, outdir=str(OUTDIR))
 
 # ===========================================================================================================================================================
 # ===========================================================================================================================================================
@@ -127,11 +127,8 @@ Threaded; stderr goes to a per-sample log for debugging.
 '''
 rule align_dorado:
     input:
-        # Dorado aligner can use an mmi or fasta; leave your index rule as-is
         ref = rules.index_ref.output.mmi
     params:
-        # point this to your per-sample basecalled reads directory
-        # e.g. config.yaml: dorado_dir: "/mnt/.../UltraLong"
         reads_dir = lambda wc: join(config["data_root"], wc.sample, "basecalling", "pass"),
         tmpdir    = "{outdir}/alignment/{sample}.dorado_tmp",
         mm2_extra = "-Y",
@@ -314,7 +311,7 @@ rule modkit_extract_per_read:
         outdir= "{outdir}/mods/",
         ref_dir= dirname(config["reference"]),
         image= config.get("modkit_docker","ontresearch/modkit:latest"),
-        promotors_bed_file = config.get("promotors_bed_file")
+        promoters_bed_file = config.get("promoters_bed_file")
     threads: 8
     log:
         "{outdir}/logs/{sample}.modkit_extract.log"
@@ -335,7 +332,7 @@ rule modkit_extract_per_read:
           --queue-size 10000 \
           --interval-size 100000 \
           --mapped-only \
-          --include-bed {params.promotors_bed_file} \
+          --include-bed {params.promoters_bed_file} \
           --pass-only \
           --reference {input.ref} {input.bam} {output.tsv}
         """
@@ -344,6 +341,7 @@ rule modkit_extract_per_read:
     Compute coverage-weighted promoter CpG methylation from modkit pileup (--cpg).
     Output columns: gene, methylation_weighted_pct, num_cpgs, total_coverage
 """
+shell.executable("bash")
 rule gene_promoter_methylation:
     input:
         bed = "{outdir}/mods/{sample}.5mC.CpG.bed",
@@ -351,22 +349,54 @@ rule gene_promoter_methylation:
     output:
         csv = "{outdir}/mods/{sample}.promoter_methylation.csv"
     params:
-        promotors_bed_file = config.get("promotors_bed_file")
+        promoters_bed_file = config.get("promoters_bed_file")
     threads: 8
     log:
-        "{outdir}/logs/{sample}.mod_promotor_methylation.log"
+        "{outdir}/logs/{sample}.mod_promoter_methylation.log"
     shell:
         r"""
         mkdir -p $(dirname {output.csv})
-        
+
         bedtools map -g {input.fai} -sorted \
-          -a <(bedtools sort -g {input.fai} -i {params.promotors_bed_file}) \
+          -a <(bedtools sort -g {input.fai} -i {params.promoters_bed_file}) \
           -b <(bedtools sort -g {input.fai} -i {input.bed}) \
-          -c 1,12,10 -o count,sum,sum \
-        | awk 'BEGIN{{OFS=","; print "gene,methylation_weighted_pct,num_cpgs,total_coverage"}}
+          -c 1,12,10 -o count,sum,sum | awk 'BEGIN{{OFS=","; print "gene,methylation_weighted_pct,num_cpgs,total_coverage"}}
                {{count=$(NF-2); sum_m=$(NF-1); sum_c=$NF; pct=(sum_c>0?100*sum_m/sum_c:0);
-                 print $4, sprintf("%.2f", pct), count, sum_c}}' \
-        > {output.csv}
+                 print $4, sprintf("%.2f", pct), count, sum_c}}' > {output.csv}
+        """
+
+rule clean_mods:
+    input:
+        in_csv="{outdir}/mods/{sample}.promoter_methylation.csv"
+    output:
+        out_csv="{outdir}/mods/{sample}.promoter_methylation.clean.csv"
+    shell:
+        r"""
+        python scripts/annotate_mods.py {input.in_csv} -o {output.out_csv}
+        """
+
+rule annotate_mods:
+    input:
+        in_csv="{outdir}/mods/{sample}.promoter_methylation.clean.csv"
+    output:
+        out_csv="{outdir}/mods/{sample}.promoter_methylation.clean.annotated.csv"
+    params:
+        methylation_markers= config.get("methylation_markers.csv", "methylation_markers.csv")
+    shell:
+        r"""
+        python scripts/annotate_moded_genes.py {input.in_csv} {params.methylation_markers} -o {output.out_csv}
+        """
+
+rule visualize_annotated_mods:
+    input:
+        in_csv="{outdir}/mods/{sample}.promoter_methylation.clean.annotated.csv"
+    output:
+        out_plot="{outdir}/mods/{sample}.promoter_methylation.clean.annotated.PDF"
+    params:
+        show_mods_above=40
+    shell:
+        r"""
+         python scripts/visualize_moded_genes.py {input.in_csv} -o {output.out_plot} --only-biomarkers --label_threshold {params.show_mods_above}
         """
 
 
@@ -441,56 +471,6 @@ rule clair3_call:
                       --output {params.outdir}'
                       
         """
-
-# Longshot — small variant calling for ONT
-rule longshot_call:
-    input:
-        bam = "{outdir}/alignment/{sample}.sorted.bam",
-        bai = "{outdir}/alignment/{sample}.sorted.bam.bai",
-        ref = config["reference"]
-    output:
-        vcf = "{outdir}/variants/{sample}/longshot/longshot.raw.vcf.gz",
-        vcf_sorted = "{outdir}/variants/{sample}/longshot/longshot.norm_sort.vcf.gz"
-    params:
-        image    = config.get("longshot_docker_image", "quay.io/biocontainers/longshot:1.0.0--h8dc4d9d_3"),
-        outdir   = "{outdir}/variants/{sample}/longshot",
-        workdir  = os.getcwd(),
-        ref_dir  = dirname(config["reference"]),
-        min_mq   = int(config.get("longshot_min_mq", 20)),
-        min_af   = config.get("longshot_min_af", 0.25),
-        max_cov  = config.get("longshot_max_cov", 0),   # set 0 to disable
-    threads:6
-    log:
-        "{outdir}/logs/{sample}.longshot.log"
-    shell:
-        r"""
-        set -euo pipefail
-        mkdir -p {params.outdir} $(dirname {output.vcf}) $(dirname {log})
-
-        docker run --rm \
-          -u $(id -u):$(id -g) \
-          -v {params.workdir}:{params.workdir} \
-          -v {params.ref_dir}:{params.ref_dir} \
-          -w {params.workdir} \
-          {params.image} \
-          bash -lc 'set -euo pipefail
-            # raw call
-            longshot \
-              --bam {input.bam} \
-              --ref {input.ref} \
-              -A -S \
-              --out {params.outdir}/longshot.raw.vcf.gz \
-              --sample_id {wildcards.sample} \
-              --min_mapq {params.min_mq} \
-              --min_alt_frac {params.min_af} 
-              > {log} 2>&1
-          '
-          awk 'BEGIN{{OFS="\t"}}
-             /^##INFO=<ID=PH,Number=/ {{ sub(/Number=[^,]+/,"Number=."); print; next }}
-             {{ print }}' \
-             {params.outdir}/longshot.raw.vcf > {params.outdir}/longshot.phfix.vcf
-        """
-
 
 # Longshot — small variant calling for ONT
 rule longshot_with_clair_input_call:

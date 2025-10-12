@@ -9,8 +9,9 @@ modkit_threshold_c: "C:0.98"
 modkit_threshold_a: "A:0.98"
 modkit_docker: "ontresearch/modkit:latest"
 modkit_interval_bp: 100000
-promotors_bed_file: "/home/mateo/RefGenomes/GCF_000001405.40/promoters_1kb.pc.bed"
+promoters_bed_file: "/home/mateo/RefGenomes/GCF_000001405.40/promoters_1kb.pc.bed"
 modkit_chunk_intervals: 6
+methylation_markers: "methylation_markers.csv"
 
 
 # Clair3 Config
