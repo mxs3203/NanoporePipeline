@@ -111,6 +111,7 @@ rule index_ref:
         outdir = str(OUTDIR)
     log:
         str(OUTDIR / "logs" / "index_ref.log")
+    threads: 1
     shell:
         r"""
         set -euo pipefail
@@ -138,7 +139,7 @@ rule align_dorado:
         sorted_bam = "{outdir}/alignment/{sample}.sorted.bam",
         bai        = "{outdir}/alignment/{sample}.sorted.bam.bai",
         summary    = "{outdir}/alignment/{sample}.summary.tsv"
-    threads: 32
+    threads: 12
     log:
         "{outdir}/logs/{sample}.dorado_align.log"
     shell:
@@ -191,7 +192,7 @@ rule mosdepth_coverage:
         run_mean    = "{outdir}/coverage/{sample}.run_mean.txt"
     params:
         prefix = "{outdir}/coverage/{sample}"
-    threads: 8
+    threads: 6
     log:
         "{outdir}/logs/{sample}.mosdepth.log"
     shell:
@@ -275,7 +276,7 @@ rule modkit_pileup_5mc_cpg:
         ref_dir=dirname(config["reference"]),
         image=config.get("modkit_docker","ontresearch/modkit:latest"),
         promotors_bed_file= config.get("promotors_bed_file")
-    threads: 16
+    threads: 12
     log:
         "{outdir}/logs/{sample}.modkit_5mc_cpg.log"
     shell:
@@ -350,7 +351,7 @@ rule gene_promoter_methylation:
         csv = "{outdir}/mods/{sample}.promoter_methylation.csv"
     params:
         promoters_bed_file = config.get("promoters_bed_file")
-    threads: 8
+    threads: 1
     log:
         "{outdir}/logs/{sample}.mod_promoter_methylation.log"
     shell:
@@ -370,6 +371,7 @@ rule clean_mods:
         in_csv="{outdir}/mods/{sample}.promoter_methylation.csv"
     output:
         out_csv="{outdir}/mods/{sample}.promoter_methylation.clean.csv"
+    threads: 1
     shell:
         r"""
         python scripts/annotate_mods.py {input.in_csv} -o {output.out_csv}
@@ -382,6 +384,7 @@ rule annotate_mods:
         out_csv="{outdir}/mods/{sample}.promoter_methylation.clean.annotated.csv"
     params:
         methylation_markers= config.get("methylation_markers.csv", "methylation_markers.csv")
+    threads: 1
     shell:
         r"""
         python scripts/annotate_moded_genes.py {input.in_csv} {params.methylation_markers} -o {output.out_csv}
@@ -394,6 +397,7 @@ rule visualize_annotated_mods:
         out_plot="{outdir}/mods/{sample}.promoter_methylation.clean.annotated.PDF"
     params:
         show_mods_above=40
+    threads: 1
     shell:
         r"""
          python scripts/visualize_moded_genes.py {input.in_csv} -o {output.out_plot} --only-biomarkers --label_threshold {params.show_mods_above}
@@ -432,7 +436,7 @@ rule clair3_call:
         snp_min_af=config.get("clair3_snp_min_af", 1),
         indel_min_af=config.get("clair3_indel_min_af", 1),
         qual=config.get("clair3_qual", 1)
-    threads: 32
+    threads: 10
     log:
         "{outdir}/logs/{sample}.clair3.log"
     shell:
@@ -490,7 +494,7 @@ rule longshot_with_clair_input_call:
         min_mq   = int(config.get("longshot_min_mq", 20)),
         min_af   = config.get("longshot_min_af", 0.25),
         max_cov  = config.get("longshot_max_cov", 0),   # set 0 to disable
-    threads:6
+    threads: 10
     log:
         "{outdir}/logs/{sample}.longshot.log"
     shell:
@@ -550,7 +554,7 @@ rule sniffles_call:
         qc_coverage = config.get("sniffles_qc_coverage", ""),
         mapq=config.get("sniffles_mapq", ""),
         sniffles_tandem_repeats_bed=config.get("sniffles_tandem_repeats_bed", "")
-    threads: 32
+    threads: 12
     log:
         "{outdir}/logs/{sample}.sniffles.log"
     shell:
