@@ -1,3 +1,7 @@
 /OUTPUT/
 /.snakemake/
 /models/
+/clinvar.vcf
+/clinvar.vcf.gz
+/clinvar.vcf.gz.csi
+/Test/

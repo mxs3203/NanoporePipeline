@@ -33,7 +33,7 @@ def find_dorado_inputs(wc):
     base = config["data_root"]  # e.g. "/mnt/.../UltraLong"
     s = wc.sample
     cand_dirs = [
-        f"{base}/{s}/basecalling/pass",
+        f"{base}/{s}/basecalling/pass/bams/",
         f"{base}/{s}/basecalling/fail",
         f"{base}/{s}/pass",
         f"{base}/{s}/fail",
@@ -57,10 +57,11 @@ rule all:
         str(OUTDIR / "ref" / f"{REF_BASENAME}.mmi"),
         str(OUTDIR / "ref" / f"{REF_BASENAME}.fai"),
         # Alignment
+        expand("{outdir}/alignment/{sample}.merged.fastq", outdir=str(OUTDIR), sample=SAMPLES),
         expand("{outdir}/alignment/{sample}.bam",outdir=str(OUTDIR),sample=SAMPLES),
         expand("{outdir}/alignment/{sample}.sorted.bam", outdir=str(OUTDIR),sample=SAMPLES),
         expand("{outdir}/alignment/{sample}.sorted.bam.bai",outdir=str(OUTDIR),sample=SAMPLES),
-        expand("{outdir}/alignment/{sample}.summary.tsv", outdir=str(OUTDIR),sample=SAMPLES),
+        expand("{outdir}/alignment/{sample}.summary.txt", outdir=str(OUTDIR),sample=SAMPLES),
         # QC  AND  stats
         expand("{outdir}/coverage/{sample}.mosdepth.summary.txt",sample=SAMPLES,outdir=str(OUTDIR)),
         expand("{outdir}/coverage/{sample}.mosdepth.global.dist.txt",  sample=SAMPLES,outdir=str(OUTDIR)),
@@ -121,6 +122,52 @@ rule index_ref:
         cp -f {input.fasta}.fai {output.fai}
         """
 
+rule prepare_fastq_for_alignment:
+    input:
+        reads_dir = lambda wc: join(config["data_root"], wc.sample, "basecalling", "pass")
+    output:
+        merged_fastq="{outdir}/alignment/{sample}.merged.fastq"
+    log:
+        "{outdir}/logs/{sample}.prepare_merged_fastq.log"
+    threads: 10
+    shell:
+        r"""
+            set -euo pipefail
+
+            mkdir -p "$(dirname "{output.merged_fastq}")" "$(dirname "{log}")"
+        
+            shopt -s nullglob
+        
+            FASTQ_FILES=( "{input.reads_dir}"/*.fastq "{input.reads_dir}"/*.fq )
+        
+            if [ "${{#FASTQ_FILES[@]}}" -gt 0 ]; then
+              echo "Found ${{#FASTQ_FILES[@]}} plain FASTQ files. Merging..." >> "{log}"
+              cat "${{FASTQ_FILES[@]}}" > "{output.merged_fastq}"
+            else
+              GZ_FILES=( "{input.reads_dir}"/*.fastq.gz "{input.reads_dir}"/*.fq.gz )
+        
+              if [ "${{#GZ_FILES[@]}}" -gt 0 ]; then
+                echo "No plain FASTQ found. Found ${{#GZ_FILES[@]}} FASTQ.GZ files. Decompressing & merging..." >> "{log}"
+                pigz -dc -p 8 "${{GZ_FILES[@]}}" > "{output.merged_fastq}"
+              else
+                echo "ERROR: No FASTQ or FASTQ.GZ files found in: {input.reads_dir}" >> "{log}"
+                exit 1
+              fi
+            fi
+        
+            shopt -u nullglob
+        
+            LINES=$(wc -l < "{output.merged_fastq}")
+            echo "Merged FASTQ: {output.merged_fastq}" >> "{log}"
+            echo "Total lines: $LINES" >> "{log}"
+        
+            if [ $((LINES % 4)) -ne 0 ]; then
+              echo "ERROR: Merged FASTQ line count ($LINES) is not divisible by 4." >> "{log}"
+              exit 1
+            fi
+
+
+        """
 '''
 align_dorado — Map ONT reads and produce a sorted BAM in one pass.
 Uses the minimap2 .mmi (map-ont with tuned params) and pipes to samtools sort → {outdir}/alignment/{sample}.sorted.bam.
@@ -128,39 +175,32 @@ Threaded; stderr goes to a per-sample log for debugging.
 '''
 rule align_dorado:
     input:
-        ref = rules.index_ref.output.mmi
+        ref = rules.index_ref.output.mmi,
+        merged_fastq = rules.prepare_fastq_for_alignment.output.merged_fastq
     params:
-        reads_dir = lambda wc: join(config["data_root"], wc.sample, "basecalling", "pass"),
         tmpdir    = "{outdir}/alignment/{sample}.dorado_tmp",
-        mm2_extra = "-Y",
-        rg= lambda wc: f"@RG\tID:{wc.sample}\tSM:{wc.sample}\tPL:ONT"
     output:
         bam        = "{outdir}/alignment/{sample}.bam",
         sorted_bam = "{outdir}/alignment/{sample}.sorted.bam",
         bai        = "{outdir}/alignment/{sample}.sorted.bam.bai",
-        summary    = "{outdir}/alignment/{sample}.summary.tsv"
-    threads: 12
+        summary    = "{outdir}/alignment/{sample}.summary.txt"
+    threads: 32
     log:
         "{outdir}/logs/{sample}.dorado_align.log"
     shell:
         r"""
         set -euo pipefail
         mkdir -p {params.tmpdir} $(dirname {output.bam}) $(dirname {log})
-
+     
         # 1) Align: when INPUT is a directory, dorado requires --output-dir
-        dorado aligner {input.ref} "{params.reads_dir}" \
-          --mm2-opts "{params.mm2_extra}" \
-          --output-dir "{params.tmpdir}" >> {log} 2>&1
+        minimap2 -t {threads} -a -Y -x map-ont {input.ref} "{input.merged_fastq}" 2>> {log} | samtools view -@ {threads} -b -o {output.bam}
 
-        # 2) Merge Dorado's chunked BAMs into a single BAM
-        samtools merge -@ {threads} -o {output.bam} {params.tmpdir}/*.bam >> {log} 2>&1
-        
         # 3) Sort & index
         samtools sort -@ {threads} -o {output.sorted_bam} {output.bam} >> {log} 2>&1
-        samtools index -@ {threads} {output.sorted_bam} >> {log} 2>&1
+        samtools index -@ 8 {output.sorted_bam} >> {log} 2>&1
 
         # 4) Summary
-        dorado summary {output.sorted_bam} > {output.summary} 2>> {log}
+        samtools stats {output.sorted_bam} > {output.summary} 2>> {log}
 
         # 5) Clean
         rm -rf "{params.tmpdir}"
@@ -408,6 +448,17 @@ rule visualize_annotated_mods:
 # ===========================================================================================================================================================
 # ===========================================================================================================================================================
 # Variant calling
+
+
+#TODO
+# sudo dorado basecaller dna_r10.4.1_e8.2_400bps_sup@v5.2.0 /var/lib/minknow/data/SequencingData/SAM5/ --output-dir /var/lib/minknow/data/SequencingData/SAM5/basecalling/ -r -x cuda:all --min-qscore 7 --emit-fastq --batchsize 128
+#
+# bcftools annotate --rename-chrs /home/mateo/PycharmProjects/NanoporePipeline/rename_chr.txt merge_output.chr_only.vcf.gz -Oz -o merge_output.renamed_chr.vcf.gz
+# bcftools index merge_output.renamed_chr.vcf.gz
+# bcftools annotate -a /home/mateo/PycharmProjects/NanoporePipeline/clinvar.vcf.gz -c INFO merge_output.renamed_chr.vcf.gz -o annotated.vcf
+# bcftools view -f 'PASS,.' annotated.vcf > filtered_annotated.vcf
+# bcftools view -i 'QUAL>30 && DP>30' annotated.vcf -Oz -o FINAL.severe.vcf.gz
+# https://myvariant.info/v1/variant/chr1:g.92840760G%3EA?assembly=hg38
 # ===========================================================================================================================================================
 # ===========================================================================================================================================================
 # ===========================================================================================================================================================
@@ -583,7 +634,90 @@ rule sniffles_call:
           ' > {log} 2>&1
         """
 
+rule cuteSV_call:
+    input:
+        bam = "{outdir}/alignment/{sample}.sorted.bam",
+        bai = "{outdir}/alignment/{sample}.sorted.bam.bai",
+        ref = config["reference"]
+    output:
+        vcf = "{outdir}/variants/{sample}/cuteSV/cutesv.raw.vcf"
+    params:
+        outdir = "{outdir}/variants/{sample}/cuteSV",
+        workdir = os.getcwd(),
 
+        # cuteSV parameters
+        min_support = config.get("cutesv_min_support", 10),
+        min_svlen   = config.get("cutesv_minsvlen", 50),
+        min_mapq    = config.get("cutesv_mapq", 20),
+        max_cluster_bias = config.get("cutesv_max_cluster_bias", 100),
+        diff_ratio_merging_INS = config.get("cutesv_diff_ratio_merging_INS", 0.3),
+        diff_ratio_merging_DEL = config.get("cutesv_diff_ratio_merging_DEL", 0.3)
+    threads: 12
+    shell:
+        r"""
+        mkdir -p {params.outdir}
+
+        cuteSV \
+            {input.bam} \
+            {input.ref} \
+            {output.vcf} \
+            {params.outdir} \
+            --threads {threads} \
+            --min_support {params.min_support} \
+            --min_svlen {params.min_svlen} \
+            --min_mapq {params.min_mapq} \
+            --max_cluster_bias {params.max_cluster_bias} \
+            --diff_ratio_merging_INS {params.diff_ratio_merging_INS} \
+            --diff_ratio_merging_DEL {params.diff_ratio_merging_DEL}
+        """
+
+rule svim_call:
+    input:
+        bam = "{outdir}/alignment/{sample}.sorted.bam",
+        bai = "{outdir}/alignment/{sample}.sorted.bam.bai",
+        ref = config["reference"]
+    output:
+        vcf = "{outdir}/variants/{sample}/svim/svim.raw.vcf"
+    params:
+        outdir = "{outdir}/variants/{sample}/svim",
+        svim_bin = config.get("svim_bin", "svim"),
+        # common filters / knobs
+        min_mapq = config.get("svim_mapq", 20),
+        min_sv_size = config.get("svim_min_sv_size", 50),
+        # SVIM has different “modes”: typically `alignment` for BAM input
+        mode = config.get("svim_mode", "alignment"),
+    threads: 12
+    log:
+        "{outdir}/variants/{sample}/svim/svim.log"
+    shell:
+        r"""
+        mkdir -p {params.outdir}
+
+        # SVIM writes results into {params.outdir}. We then copy/standardize the VCF path.
+        {params.svim_bin} {params.mode} \
+            {params.outdir} \
+            {input.bam} \
+            {input.ref} \
+            --min_mapq {params.min_mapq} \
+            --min_sv_size {params.min_sv_size} \
+            --cores {threads} \
+            > {log} 2>&1
+
+        # Standardize output path for the pipeline:
+        # Depending on SVIM version, the VCF name can vary. Most commonly it's:
+        #   {params.outdir}/variants.vcf
+        # We normalize it to {output.vcf}.
+        if [ -f "{params.outdir}/variants.vcf" ]; then
+            cp "{params.outdir}/variants.vcf" "{output.vcf}"
+        elif [ -f "{params.outdir}/variants.vcf.gz" ]; then
+            # In case SVIM already gzipped (rare), decompress to raw vcf
+            zcat "{params.outdir}/variants.vcf.gz" > "{output.vcf}"
+        else
+            echo "ERROR: SVIM output VCF not found in {params.outdir}" >&2
+            ls -lah "{params.outdir}" >&2 || true
+            exit 2
+        fi
+        """
 
 
 

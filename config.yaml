@@ -1,6 +1,6 @@
 # General Config
 reference: "/home/mateo/RefGenomes/GCF_000001405.40/GCF_000001405.40_GRCh38.p14_genomic.fna"
-data_root: "/mnt/wwn-0x5002538f42211069-part2/AlgebraBioinfLab/SequencingData/UltraLong"
+data_root: "/var/lib/minknow/data/SequencingData/"
 outdir: "/home/mateo/PycharmProjects/NanoporePipeline/OUTPUT"
 fastq_subpath: "basecalling/pass"
 
@@ -43,3 +43,15 @@ sniffles_minsvlen: 50
 sniffles_mapq: 25
 sniffles_qc_coverage : 2
 sniffles_tandem_repeats_bed: "/home/mateo/RefGenomes/GCF_000001405.40/human_GRCh38_TANDEM_REPEATS.trf.bed"
+
+#CuteSV
+cutesv_min_support: 10
+cutesv_minsvlen: 50
+cutesv_mapq: 20
+cutesv_max_cluster_bias: 100
+cutesv_diff_ratio_merging_INS: 0.3
+cutesv_diff_ratio_merging_DEL: 0.3
+# SVIM
+svim_min_sv_size: 50
+svim_mapq: 20
+
