@@ -38,7 +38,13 @@ awk 'BEGIN{FS=OFS="\t"}
    print $1, start, end, gene_id";"gene_name, 0, $7
  }' "$GTF" | sort -k1,1 -k2,2n > "$PROM"
 
-
+awk 'BEGIN{OFS="\t"}
+     NR==FNR {map[$1]=$2; next}
+     {
+       if ($1 in map) $1=map[$1];
+       print
+     }' rename_chr.txt promoters_1kb.pc.bed \
+> promoters_1kb.pc.renamed.bed
 
  Compute promoter methylation per gene (coverage-weighted):
 

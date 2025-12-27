@@ -1,25 +1,26 @@
 # General Config
 reference: "/home/mateo/RefGenomes/GCF_000001405.40/GCF_000001405.40_GRCh38.p14_genomic.fna"
+genome_gtf_file: "/home/mateo/RefGenomes/GCF_000001405.40/genomic.gtf"
+rename_chr_file: "/home/mateo/PycharmProjects/NanoporePipeline/rename_chr.txt"
 data_root: "/var/lib/minknow/data/SequencingData/"
 outdir: "/home/mateo/PycharmProjects/NanoporePipeline/OUTPUT"
 fastq_subpath: "basecalling/pass"
 
 # Methylation calling with modkit
-modkit_threshold_c: "C:0.98"
-modkit_threshold_a: "A:0.98"
+modkit_threshold_c: "C:0.85"
+modkit_threshold_a: "A:0.85"
 modkit_docker: "ontresearch/modkit:latest"
 modkit_interval_bp: 100000
 promoters_bed_file: "/home/mateo/RefGenomes/GCF_000001405.40/promoters_1kb.pc.bed"
 modkit_chunk_intervals: 6
 methylation_markers: "methylation_markers.csv"
 
-
 # Clair3 Config
 clair3_docker_image: "hkubal/clair3:latest"
 clair3_gpus: "all"
-clair3_model_path: "r1041_e82_400bps_sup_v520" #r1041_e82_400bps_hac_v500,r1041_e82_400bps_sup_v410,r1041_e82_400bps_hac_v410
-clair3_model_dir: "/home/mateo/PycharmProjects/NanoporePipeline/models/"
+clair3_model_path: "/opt/models/r1041_e82_400bps_sup_v500" #r1041_e82_400bps_hac_v500,r1041_e82_400bps_sup_v410,r1041_e82_400bps_hac_v410, r1041_e82_400bps_sup_v500
 target_bed: "/home/mateo/RefGenomes/GCF_000001405.40/gene_anotation.bed"
+clair3_contigs: "NC_000001.11,NC_000002.12,NC_000003.12,NC_000004.12,NC_000005.10,NC_000006.12,NC_000007.14,NC_000008.11,NC_000009.12,NC_000010.11,NC_000011.10,NC_000012.12,NC_000013.11,NC_000014.9,NC_000015.10,NC_000016.10,NC_000017.11,NC_000018.10,NC_000019.10,NC_000020.11,NC_000021.9,NC_000022.11,NC_000023.11,NC_000024.10,NC_012920.1"
 
 # DP=6 this requires ≥2 ALT reads (2/6=0.33), which dramatically reduces
 # single-read SNP false positives that often slip through the defaults (defaults are ~0.08 for SNPs)

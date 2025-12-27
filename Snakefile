@@ -56,6 +56,10 @@ rule all:
         # reference indices (written into OUTDIR/ref/)
         str(OUTDIR / "ref" / f"{REF_BASENAME}.mmi"),
         str(OUTDIR / "ref" / f"{REF_BASENAME}.fai"),
+        str(OUTDIR/"ref/GCF_000001405.40/promoters_1kb.pc.bed"),
+        str(OUTDIR/"ref/GCF_000001405.40/promoters_1kb.pc.renamed.bed"),
+        # FASTQC
+        expand("{outdir}/qc/fastqc/{sample}_fastqc.html", outdir=str(OUTDIR), sample=SAMPLES),
         # Alignment
         expand("{outdir}/alignment/{sample}.merged.fastq", outdir=str(OUTDIR), sample=SAMPLES),
         expand("{outdir}/alignment/{sample}.bam",outdir=str(OUTDIR),sample=SAMPLES),
@@ -71,8 +75,6 @@ rule all:
         expand("{outdir}/coverage/{sample}.chrom_mean.tsv",sample=SAMPLES, outdir=str(OUTDIR)),
         expand("{outdir}/coverage/{sample}.run_mean.txt",sample=SAMPLES,outdir=str(OUTDIR)),
         # Methylation
-        expand("{outdir}/mods/{sample}.per_read_calls.tsv",sample=SAMPLES,outdir=str(OUTDIR)),
-        expand("{outdir}/mods/{sample}.read_table.tsv",sample=SAMPLES,outdir=str(OUTDIR)),
         expand("{outdir}/mods/{sample}.5mC.CpG.bed",sample=SAMPLES,outdir=str(OUTDIR)),
         expand("{outdir}/mods/{sample}.promoter_methylation.csv",sample=SAMPLES,outdir=str(OUTDIR)),
         expand("{outdir}/mods/{sample}.promoter_methylation.clean.csv",sample=SAMPLES,outdir=str(OUTDIR)),
@@ -168,6 +170,35 @@ rule prepare_fastq_for_alignment:
 
 
         """
+
+rule fastqc_merged_fastq:
+    input:
+        fastq = rules.prepare_fastq_for_alignment.output.merged_fastq
+    output:
+        html = "{outdir}/qc/fastqc/{sample}_fastqc.html"
+    threads: 4
+    params:
+        outdir=str(OUTDIR)
+    log:
+        "{outdir}/logs/{sample}.fastqc.log"
+    shell:
+        r"""
+        set -euo pipefail
+
+        mkdir -p "{params.outdir}/qc/fastqc" "$(dirname "{log}")"
+
+        fastqc \
+          -t {threads} \
+          --outdir "{params.outdir}/qc/fastqc" \
+          "{input.fastq}" \
+          > "{log}" 2>&1
+        """
+
+
+
+
+
+
 '''
 align_dorado — Map ONT reads and produce a sorted BAM in one pass.
 Uses the minimap2 .mmi (map-ont with tuned params) and pipes to samtools sort → {outdir}/alignment/{sample}.sorted.bam.
@@ -300,22 +331,71 @@ rule mapping_stats:
 # ===========================================================================================================================================================
 # ===========================================================================================================================================================
 # ===========================================================================================================================================================
+rule make_promoters_1kb_and_rename:
+    input:
+        gtf = config["genome_gtf_file"],
+        rename_map = config["rename_chr_file"]
+    output:
+        prom_bed = "{outdir}/ref/GCF_000001405.40/promoters_1kb.pc.bed",
+        prom_bed_renamed = "{outdir}/ref/GCF_000001405.40/promoters_1kb.pc.renamed.bed"
+    params:
+        flank = 1000
+    log:
+        "{outdir}/logs/make_promoters_1kb.log"
+    shell:
+        r"""
+        set -euo pipefail
+        mkdir -p "$(dirname "{output.prom_bed}")" "$(dirname "{output.prom_bed_renamed}")" "$(dirname "{log}")"
+
+        # 1) Build promoters (TSS +/- flank) from GTF -> BED6
+        # Note: tss is 0-based for BED: for '+' TSS=$4-1; for '-' TSS=$5-1
+        awk 'BEGIN{{FS=OFS="\t"}}
+             $3=="gene"{{
+               gene_id=""; gene_name="";
+               n=split($9,a,";");
+               for(i=1;i<=n;i++){{
+                 gsub(/^ +/,"",a[i]);
+                 if(a[i]~/(^| )gene_id /){{ split(a[i],b," "); gsub(/"/,"",b[2]); gene_id=b[2] }}
+                 if(a[i]~/(^| )gene_name /){{ split(a[i],b," "); gsub(/"/,"",b[2]); gene_name=b[2] }}
+               }}
+               if($7=="+"){{ tss=$4-1 }} else {{ tss=$5-1 }}
+               start=tss-{params.flank}; if(start<0)start=0; end=tss+{params.flank};
+               print $1, start, end, gene_id";"gene_name, 0, $7
+             }}' "{input.gtf}" \
+        | sort -k1,1 -k2,2n \
+        > "{output.prom_bed}"
+
+        # 2) Rename contigs using mapping file (NC_... -> 1..24)
+        awk 'BEGIN{{OFS="\t"}}
+             NR==FNR {{map[$1]=$2; next}}
+             {{
+               if ($1 in map) $1=map[$1];
+               print
+             }}' "{input.rename_map}" "{output.prom_bed}" \
+        | sort -k1,1 -k2,2n \
+        > "{output.prom_bed_renamed}"
+
+        echo "Wrote: {output.prom_bed}" >> "{log}"
+        echo "Wrote: {output.prom_bed_renamed}" >> "{log}"
+        """
+
+
 rule modkit_pileup_5mc_cpg:
     input:
         bam = "{outdir}/alignment/{sample}.sorted.bam",
         bai = "{outdir}/alignment/{sample}.sorted.bam.bai",
-        ref = config["reference"]
+        ref = config["reference"],
+        promotors_bed_file= rules.make_promoters_1kb_and_rename.output.prom_bed
     output:
         bed = "{outdir}/mods/{sample}.5mC.CpG.bed"
     params:
-        modkit_thrs = config.get("modkit_threshold_c", "C:0.85"),
+        modkit_thrs = config.get("modkit_threshold_c", ""),
         workdir=os.getcwd(),
-        isz= config.get("modkit_interval_bp", 50000),
+        isz= config.get("modkit_interval_bp", 100000),
         csize=config.get("modkit_chunk_intervals", 8),
         outdir="{outdir}/mods/",
         ref_dir=dirname(config["reference"]),
         image=config.get("modkit_docker","ontresearch/modkit:latest"),
-        promotors_bed_file= config.get("promotors_bed_file")
     threads: 12
     log:
         "{outdir}/logs/{sample}.modkit_5mc_cpg.log"
@@ -331,51 +411,10 @@ rule modkit_pileup_5mc_cpg:
           {params.image} \
           modkit pileup {input.bam} {output.bed} \
           --mod-thresholds {params.modkit_thrs} \
-          --include-bed {params.promotors_bed_file} \
+          --include-bed {input.promotors_bed_file} \
           --interval-size {params.isz} \
-          --chunk-size {params.csize} \
           --cpg --ref {input.ref} -t {threads} \
           > {log} 2>&1
-        """
-
-# ---- Per-read calls table (for haplotype or downstream stats) ----
-rule modkit_extract_per_read:
-    input:
-        bam = "{outdir}/alignment/{sample}.sorted.bam",
-        bai = "{outdir}/alignment/{sample}.sorted.bam.bai",
-        ref = config["reference"]
-    output:
-        tsv = "{outdir}/mods/{sample}.per_read_calls.tsv",
-        read_path = "{outdir}/mods/{sample}.read_table.tsv"
-    params:
-        workdir= os.getcwd(),
-        outdir= "{outdir}/mods/",
-        ref_dir= dirname(config["reference"]),
-        image= config.get("modkit_docker","ontresearch/modkit:latest"),
-        promoters_bed_file = config.get("promoters_bed_file")
-    threads: 8
-    log:
-        "{outdir}/logs/{sample}.modkit_extract.log"
-    shell:
-        r"""
-        set -euo pipefail
-        mkdir -p $(dirname {output.tsv}) $(dirname {log})
-        
-        docker run --rm -u $(id -u):$(id -g) \
-          -v {params.workdir}:{params.workdir} \
-          -v {params.ref_dir}:{params.ref_dir} \
-          -v {params.outdir}:{params.outdir} \
-          -w {params.workdir} \
-          {params.image} \
-          modkit extract -t {threads} \
-          --read-calls-path {output.read_path} \
-          --filter-percentile 0.9 \
-          --queue-size 10000 \
-          --interval-size 100000 \
-          --mapped-only \
-          --include-bed {params.promoters_bed_file} \
-          --pass-only \
-          --reference {input.ref} {input.bam} {output.tsv}
         """
 
 """
@@ -386,11 +425,10 @@ shell.executable("bash")
 rule gene_promoter_methylation:
     input:
         bed = "{outdir}/mods/{sample}.5mC.CpG.bed",
-        fai = str(OUTDIR / "ref" / f"{REF_BASENAME}.fai")
+        fai = str(OUTDIR / "ref" / f"{REF_BASENAME}.fai"),
+        promoters_bed_file = rules.make_promoters_1kb_and_rename.output.prom_bed_renamed
     output:
         csv = "{outdir}/mods/{sample}.promoter_methylation.csv"
-    params:
-        promoters_bed_file = config.get("promoters_bed_file")
     threads: 1
     log:
         "{outdir}/logs/{sample}.mod_promoter_methylation.log"
@@ -399,7 +437,7 @@ rule gene_promoter_methylation:
         mkdir -p $(dirname {output.csv})
 
         bedtools map -g {input.fai} -sorted \
-          -a <(bedtools sort -g {input.fai} -i {params.promoters_bed_file}) \
+          -a <(bedtools sort -g {input.fai} -i {input.promoters_bed_file}) \
           -b <(bedtools sort -g {input.fai} -i {input.bed}) \
           -c 1,12,10 -o count,sum,sum | awk 'BEGIN{{OFS=","; print "gene,methylation_weighted_pct,num_cpgs,total_coverage"}}
                {{count=$(NF-2); sum_m=$(NF-1); sum_c=$NF; pct=(sum_c>0?100*sum_m/sum_c:0);
@@ -479,14 +517,14 @@ rule clair3_call:
         outdir  = "{outdir}/variants/{sample}/clair3/",
         workdir = os.getcwd(),
         ref_dir= dirname(config["reference"]),
-        model   = config.get("clair3_model_path", ""),
-        modeldir= config.get("clair3_model_dir","models"),
+        model   = config.get("clair3_model_path", "/opt/models/r1041_e82_400bps_sup_v500"),
         bed_file= config.get("target_bed", ""),
         min_mq=config.get("clair3_min_mq", 1),
         min_coverage=config.get("clair3_min_coverage", 1),
         snp_min_af=config.get("clair3_snp_min_af", 1),
         indel_min_af=config.get("clair3_indel_min_af", 1),
-        qual=config.get("clair3_qual", 1)
+        qual=config.get("clair3_qual", 1),
+        contigs=config.get("clair3_contigs", "")
     threads: 10
     log:
         "{outdir}/logs/{sample}.clair3.log"
@@ -500,29 +538,27 @@ rule clair3_call:
         -u $(id -u):$(id -g) \
           -v {params.workdir}:{params.workdir} \
           -v {params.ref_dir}:{params.ref_dir} \
-          -v {params.modeldir}:/models \
           -w {params.workdir} \
           {params.image} \
           bash -lc 'set -euo pipefail
                   source /opt/conda/etc/profile.d/conda.sh
                   conda activate clair3        
 
-                    test -d "/models/{params.model}" || {{ echo "Model not found: /models/{params.model}"; exit 2; }}
+                    test -d "{params.model}" || {{ echo "Model not found: {params.model}"; exit 2; }}
 
 
                     /opt/bin/run_clair3.sh \
                       --bam_fn={input.bam} \
                       --ref_fn={input.ref} \
                       --remove_intermediate_dir \
-                      --include_all_ctgs \
                       --longphase_for_phasing \
                       --threads={threads} \
                       --min_mq={params.min_mq} \
                       --min_coverage={params.min_coverage} \
                       --snp_min_af={params.snp_min_af} --indel_min_af={params.indel_min_af} --qual={params.qual} \
                       --platform=ont \
-                      --device='cuda:0' \
-                      --model_path=/models/{params.model} \
+                      --ctg_name='{params.contigs}' \
+                      --model_path={params.model} \
                       --output {params.outdir}'
                       
         """
