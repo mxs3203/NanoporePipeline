@@ -19,37 +19,12 @@ def _discover_samples():
     names = []
     for d in DATAROOT.iterdir():
         sp = d / SUBPATH
-        if sp.is_dir() and any(sp.rglob("*.fastq.gz")):
+        if sp.is_dir() and any(sp.rglob("*.bam")):
             names.append(d.name)
     return sorted(names)
 
 SAMPLES = _discover_samples()
 
-def fastq_list(wc):
-    # All per-sample FASTQs, recursive just in case
-    return sorted(str(p) for p in (DATAROOT / wc.sample / SUBPATH).rglob("*.fastq.gz"))
-
-def find_dorado_inputs(wc):
-    base = config["data_root"]  # e.g. "/mnt/.../UltraLong"
-    s = wc.sample
-    cand_dirs = [
-        f"{base}/{s}/basecalling/pass/bams/",
-        f"{base}/{s}/basecalling/fail",
-        f"{base}/{s}/pass",
-        f"{base}/{s}/fail",
-        f"{base}/{s}",
-    ]
-    files = []
-    for d in cand_dirs:
-        if os.path.isdir(d):
-            files += sorted(glob.glob(os.path.join(d, "*.bam")))
-            files += sorted(glob.glob(os.path.join(d, "*.fastq"))) \
-                  +  sorted(glob.glob(os.path.join(d, "*.fq"))) \
-                  +  sorted(glob.glob(os.path.join(d, "*.fastq.gz"))) \
-                  +  sorted(glob.glob(os.path.join(d, "*.fq.gz")))
-    if not files:
-        raise ValueError(f"No Dorado outputs found for sample {s} under {base}")
-    return files
 # ---------------------- targets ----------------------
 rule all:
     input:
@@ -59,14 +34,15 @@ rule all:
         str(OUTDIR/"ref/GCF_000001405.40/promoters_1kb.pc.bed"),
         str(OUTDIR/"ref/GCF_000001405.40/promoters_1kb.pc.renamed.bed"),
         # FASTQC
-        expand("{outdir}/qc/fastqc/{sample}_fastqc.html", outdir=str(OUTDIR), sample=SAMPLES),
-        # Alignment
+        expand("{outdir}/qc/nanoplotFastq/{sample}/nanoplot_fastq.done", outdir=str(OUTDIR), sample=SAMPLES),
+        expand("{outdir}/qc/nanoplotBAM/{sample}/nanoplot_align.done", outdir=str(OUTDIR), sample=SAMPLES),
+        #Alignment
         expand("{outdir}/alignment/{sample}.merged.fastq", outdir=str(OUTDIR), sample=SAMPLES),
         expand("{outdir}/alignment/{sample}.bam",outdir=str(OUTDIR),sample=SAMPLES),
         expand("{outdir}/alignment/{sample}.sorted.bam", outdir=str(OUTDIR),sample=SAMPLES),
         expand("{outdir}/alignment/{sample}.sorted.bam.bai",outdir=str(OUTDIR),sample=SAMPLES),
-        expand("{outdir}/alignment/{sample}.summary.txt", outdir=str(OUTDIR),sample=SAMPLES),
-        # QC  AND  stats
+        expand("{outdir}/alignment/{sample}.summary.tsv", outdir=str(OUTDIR),sample=SAMPLES),
+        #QC  AND  stats
         expand("{outdir}/coverage/{sample}.mosdepth.summary.txt",sample=SAMPLES,outdir=str(OUTDIR)),
         expand("{outdir}/coverage/{sample}.mosdepth.global.dist.txt",  sample=SAMPLES,outdir=str(OUTDIR)),
         expand("{outdir}/stats/{sample}.flagstat.txt",sample=SAMPLES,outdir=str(OUTDIR)),
@@ -83,10 +59,7 @@ rule all:
         # # # variants
         # Clair3
         expand("{outdir}/variants/{sample}/clair3/merge_output.vcf.gz", sample=SAMPLES, outdir=str(OUTDIR)),
-        expand("{outdir}/variants/{sample}/clair3/merge_output.norm_sort.vcf.gz", sample=SAMPLES, outdir=str(OUTDIR)),
-        # # Longshot with clair3 as input
-        # expand("{outdir}/variants/{sample}/longshot/longshot_clair3.raw.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
-        # expand("{outdir}/variants/{sample}/longshot/longshot_clair3.norm_sort.vcf.gz", sample=SAMPLES, outdir=OUTDIR),
+        expand("{outdir}/variants/{sample}/clair3/merge_output.vcf.gz.tbi", sample=SAMPLES, outdir=str(OUTDIR)),
         # sniffles2
         expand("{outdir}/variants/{sample}/sniffles/sniffles.snf", sample=SAMPLES, outdir=str(OUTDIR))
 
@@ -171,34 +144,6 @@ rule prepare_fastq_for_alignment:
 
         """
 
-rule fastqc_merged_fastq:
-    input:
-        fastq = rules.prepare_fastq_for_alignment.output.merged_fastq
-    output:
-        html = "{outdir}/qc/fastqc/{sample}_fastqc.html"
-    threads: 4
-    params:
-        outdir=str(OUTDIR)
-    log:
-        "{outdir}/logs/{sample}.fastqc.log"
-    shell:
-        r"""
-        set -euo pipefail
-
-        mkdir -p "{params.outdir}/qc/fastqc" "$(dirname "{log}")"
-
-        fastqc \
-          -t {threads} \
-          --outdir "{params.outdir}/qc/fastqc" \
-          "{input.fastq}" \
-          > "{log}" 2>&1
-        """
-
-
-
-
-
-
 '''
 align_dorado — Map ONT reads and produce a sorted BAM in one pass.
 Uses the minimap2 .mmi (map-ont with tuned params) and pipes to samtools sort → {outdir}/alignment/{sample}.sorted.bam.
@@ -207,31 +152,37 @@ Threaded; stderr goes to a per-sample log for debugging.
 rule align_dorado:
     input:
         ref = rules.index_ref.output.mmi,
-        merged_fastq = rules.prepare_fastq_for_alignment.output.merged_fastq
     params:
         tmpdir    = "{outdir}/alignment/{sample}.dorado_tmp",
+        reads_dir = lambda wc: join(config["data_root"],wc.sample,"basecalling","pass"),
+        mm2_extra= "-Y -x map-ont"
     output:
         bam        = "{outdir}/alignment/{sample}.bam",
         sorted_bam = "{outdir}/alignment/{sample}.sorted.bam",
         bai        = "{outdir}/alignment/{sample}.sorted.bam.bai",
-        summary    = "{outdir}/alignment/{sample}.summary.txt"
-    threads: 32
+        summary    = "{outdir}/alignment/{sample}.summary.tsv"
+    threads: 16
     log:
         "{outdir}/logs/{sample}.dorado_align.log"
     shell:
         r"""
         set -euo pipefail
         mkdir -p {params.tmpdir} $(dirname {output.bam}) $(dirname {log})
-     
+        
         # 1) Align: when INPUT is a directory, dorado requires --output-dir
-        minimap2 -t {threads} -a -Y -x map-ont {input.ref} "{input.merged_fastq}" 2>> {log} | samtools view -@ {threads} -b -o {output.bam}
+        dorado aligner "{input.ref}" {params.reads_dir} \
+          --mm2-opts "{params.mm2_extra}" \
+          --output-dir "{params.tmpdir}" -t {threads} \
+          >> {log} 2>&1
+          
+        samtools merge -@ 8 -o {output.bam} {params.tmpdir}/*.bam >> {log} 2>&1
 
         # 3) Sort & index
         samtools sort -@ {threads} -o {output.sorted_bam} {output.bam} >> {log} 2>&1
         samtools index -@ 8 {output.sorted_bam} >> {log} 2>&1
 
         # 4) Summary
-        samtools stats {output.sorted_bam} > {output.summary} 2>> {log}
+        dorado summary {output.sorted_bam} > {output.summary} 2>> {log}
 
         # 5) Clean
         rm -rf "{params.tmpdir}"
@@ -246,6 +197,60 @@ rule align_dorado:
 # ===========================================================================================================================================================
 # ===========================================================================================================================================================
 # ===========================================================================================================================================================
+
+rule nanoplot_merged_fastq:
+    input:
+        fastq = rules.prepare_fastq_for_alignment.output.merged_fastq
+    params:
+        outdir = "{outdir}/qc/nanoplotFastq/{sample}"
+    output:
+        done = "{outdir}/qc/nanoplotFastq/{sample}/nanoplot_fastq.done"
+    threads: 4
+    log:
+        "{outdir}/logs/{sample}.nanoplot_fastq.log"
+    shell:
+        r"""
+        set -euo pipefail
+
+        mkdir -p "{params.outdir}" "$(dirname "{log}")"
+
+        NanoPlot \
+          --threads {threads} \
+          --fastq_rich "{input.fastq}" \
+          --outdir "{params.outdir}" \
+          --loglength \
+          > "{log}" 2>&1
+
+        # Create a completion flag so Snakemake can track the directory output robustly
+        touch "{output.done}"
+        """
+
+rule nanoplot_alignment_QC:
+    input:
+        bam = rules.align_dorado.output.sorted_bam
+    params:
+        outdir = "{outdir}/qc/nanoplotBAM/{sample}"
+    output:
+        done = "{outdir}/qc/nanoplotBAM/{sample}/nanoplot_align.done"
+    threads: 4
+    log:
+        "{outdir}/logs/{sample}.nanoplot_bam.log"
+    shell:
+        r"""
+        set -euo pipefail
+
+        mkdir -p "{params.outdir}" "$(dirname "{log}")"
+
+        NanoPlot \
+          --threads {threads} \
+          --bam "{input.bam}" \
+          --outdir "{params.outdir}" \
+          --loglength \
+          > "{log}" 2>&1
+
+        # Create a completion flag so Snakemake can track the directory output robustly
+        touch "{output.done}"
+        """
 
 '''
 mosdepth_coverage — Compute per-sample coverage summaries with mosdepth.
@@ -391,30 +396,32 @@ rule modkit_pileup_5mc_cpg:
     params:
         modkit_thrs = config.get("modkit_threshold_c", ""),
         workdir=os.getcwd(),
-        isz= config.get("modkit_interval_bp", 100000),
+        isz= config.get("modkit_interval_bp", 250000),
         csize=config.get("modkit_chunk_intervals", 8),
         outdir="{outdir}/mods/",
-        ref_dir=dirname(config["reference"]),
-        image=config.get("modkit_docker","ontresearch/modkit:latest"),
-    threads: 12
+        ref_dir=dirname(config["reference"])
+    threads: 8
     log:
         "{outdir}/logs/{sample}.modkit_5mc_cpg.log"
     shell:
         r"""
         set -euo pipefail
         mkdir -p $(dirname {output.bed}) $(dirname {log})
-        docker run --rm -u $(id -u):$(id -g) \
-          -v {params.workdir}:{params.workdir} \
-          -v {params.ref_dir}:{params.ref_dir} \
-          -v {params.outdir}:{params.outdir} \
-          -w {params.workdir} \
-          {params.image} \
+       
+      
           modkit pileup {input.bam} {output.bed} \
           --mod-thresholds {params.modkit_thrs} \
+          --modified-bases 5mC 5hmC \
+          --combine-mods \
+          --combine-strands \
           --include-bed {input.promotors_bed_file} \
           --interval-size {params.isz} \
           --cpg --ref {input.ref} -t {threads} \
+          --log {log} \
           > {log} 2>&1
+          
+          rm -f "{params.tmpbam}" "{params.tmpbam}.bai"
+            
         """
 
 """
@@ -510,7 +517,7 @@ rule clair3_call:
         ref = config["reference"]
     output:
         vcf = "{outdir}/variants/{sample}/clair3/merge_output.vcf.gz",
-        vcf_sorted = "{outdir}/variants/{sample}/clair3/merge_output.norm_sort.vcf.gz"
+        vcf_tbi = "{outdir}/variants/{sample}/clair3/merge_output.vcf.gz.tbi"
     params:
         image   = config.get("clair3_docker_image", "hkubal/clair3:latest"),
         gpus    = config.get("clair3_gpus", "0"),
@@ -524,8 +531,8 @@ rule clair3_call:
         snp_min_af=config.get("clair3_snp_min_af", 1),
         indel_min_af=config.get("clair3_indel_min_af", 1),
         qual=config.get("clair3_qual", 1),
-        contigs=config.get("clair3_contigs", "")
-    threads: 10
+        contigs=config.get("clair3_contigs2", "")
+    threads: 16
     log:
         "{outdir}/logs/{sample}.clair3.log"
     shell:
@@ -533,85 +540,34 @@ rule clair3_call:
         set -euo pipefail
         mkdir -p {params.outdir} $(dirname {output.vcf}) $(dirname {log})
 
-        docker run --rm --gpus "device=0" \
+        docker run --rm --gpus all \
         -e CUDA_VISIBLE_DEVICES=0 \
         -u $(id -u):$(id -g) \
+          -v {params.workdir}:{params.workdir} \
           -v {params.workdir}:{params.workdir} \
           -v {params.ref_dir}:{params.ref_dir} \
           -w {params.workdir} \
           {params.image} \
           bash -lc 'set -euo pipefail
                   source /opt/conda/etc/profile.d/conda.sh
-                  conda activate clair3        
+                  conda activate clair3 
 
                     test -d "{params.model}" || {{ echo "Model not found: {params.model}"; exit 2; }}
-
-
+                    
                     /opt/bin/run_clair3.sh \
                       --bam_fn={input.bam} \
                       --ref_fn={input.ref} \
-                      --remove_intermediate_dir \
                       --longphase_for_phasing \
                       --threads={threads} \
                       --min_mq={params.min_mq} \
                       --min_coverage={params.min_coverage} \
                       --snp_min_af={params.snp_min_af} --indel_min_af={params.indel_min_af} --qual={params.qual} \
-                      --platform=ont \
+                      --platform="ont" \
                       --ctg_name='{params.contigs}' \
                       --model_path={params.model} \
                       --output {params.outdir}'
                       
         """
-
-# Longshot — small variant calling for ONT
-rule longshot_with_clair_input_call:
-    input:
-        bam = "{outdir}/alignment/{sample}.sorted.bam",
-        bai = "{outdir}/alignment/{sample}.sorted.bam.bai",
-        clair_vcf = "{outdir}/variants/{sample}/clair3/merge_output.vcf.gz",
-        ref = config["reference"]
-    output:
-        vcf = "{outdir}/variants/{sample}/longshot/longshot_clair3.raw.vcf.gz",
-        vcf_sorted = "{outdir}/variants/{sample}/longshot/longshot_clair3.norm_sort.vcf.gz"
-    params:
-        image    = config.get("longshot_docker_image", "quay.io/biocontainers/longshot:1.0.0--h8dc4d9d_3"),
-        outdir   = "{outdir}/variants/{sample}/longshot",
-        workdir  = os.getcwd(),
-        ref_dir  = dirname(config["reference"]),
-        min_mq   = int(config.get("longshot_min_mq", 20)),
-        min_af   = config.get("longshot_min_af", 0.25),
-        max_cov  = config.get("longshot_max_cov", 0),   # set 0 to disable
-    threads: 10
-    log:
-        "{outdir}/logs/{sample}.longshot.log"
-    shell:
-        r"""
-        set -euo pipefail
-        mkdir -p {params.outdir} $(dirname {output.vcf}) $(dirname {log})
-
-        docker run --rm \
-          -u $(id -u):$(id -g) \
-          -v {params.workdir}:{params.workdir} \
-          -v {params.ref_dir}:{params.ref_dir} \
-          -w {params.workdir} \
-          {params.image} \
-          bash -lc 'set -euo pipefail
-            # raw call
-            longshot \
-              --bam {input.bam} \
-              --ref {input.ref} \
-              -A -S \
-              -v {input.clair_vcf} \
-              --out {params.outdir}/longshot_clair3.raw.vcf.gz \
-              --sample_id {wildcards.sample} \
-              --min_mapq {params.min_mq} \
-              --min_alt_frac {params.min_af} 
-              > {log} 2>&1
-          '
-          bcftools norm -f {input.ref} -m -both {output.vcf} | bcftools sort -Oz -o {output.vcf_sorted}
-          tabix -f -p vcf {output.vcf_sorted} >> {log} 2>&1
-        """
-
 # ===========================================================================================================================================================
 # ===========================================================================================================================================================
 # ===========================================================================================================================================================

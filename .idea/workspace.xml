@@ -4,11 +4,9 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="034ef7d0-52d0-4e62-91f0-3a71443dd95f" name="Changes" comment="changed mapping so it is much faster using minimap2. The input is merged(concat) unzipped fastq, since it proved to be the fastest. Should be around 1-3h for 80Gb fastq">
-      <change afterPath="$PROJECT_DIR$/primary.chroms.bed" afterDir="false" />
+    <list default="true" id="034ef7d0-52d0-4e62-91f0-3a71443dd95f" name="Changes" comment="added fastqc, added promotors +- 10k file which is generated automatically from GTF file, this promotor file is now input to modkit rules, modkitrules are changed however CpG produce empty bed file, clair3 uses only main chromosomes (NC_100001.10, etc) which resulted in major speed up as we are not processing all regions,">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Snakefile" beforeDir="false" afterPath="$PROJECT_DIR$/Snakefile" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/TODO" beforeDir="false" afterPath="$PROJECT_DIR$/TODO" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/config.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/config.yaml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -298,7 +296,15 @@
       <option name="project" value="LOCAL" />
       <updated>1766774336999</updated>
     </task>
-    <option name="localTasksCounter" value="14" />
+    <task id="LOCAL-00014" summary="added fastqc, added promotors +- 10k file which is generated automatically from GTF file, this promotor file is now input to modkit rules, modkitrules are changed however CpG produce empty bed file, clair3 uses only main chromosomes (NC_100001.10, etc) which resulted in major speed up as we are not processing all regions,">
+      <option name="closed" value="true" />
+      <created>1766855340657</created>
+      <option name="number" value="00014" />
+      <option name="presentableId" value="LOCAL-00014" />
+      <option name="project" value="LOCAL" />
+      <updated>1766855340657</updated>
+    </task>
+    <option name="localTasksCounter" value="15" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -318,7 +324,8 @@
     <MESSAGE value="genes to check in methylation" />
     <MESSAGE value="added annotation of mods and visualization of mods per group.... The snakemake does not run or actually does not recognize new rules... not sure why" />
     <MESSAGE value="changed mapping so it is much faster using minimap2. The input is merged(concat) unzipped fastq, since it proved to be the fastest. Should be around 1-3h for 80Gb fastq" />
-    <option name="LAST_COMMIT_MESSAGE" value="changed mapping so it is much faster using minimap2. The input is merged(concat) unzipped fastq, since it proved to be the fastest. Should be around 1-3h for 80Gb fastq" />
+    <MESSAGE value="added fastqc, added promotors +- 10k file which is generated automatically from GTF file, this promotor file is now input to modkit rules, modkitrules are changed however CpG produce empty bed file, clair3 uses only main chromosomes (NC_100001.10, etc) which resulted in major speed up as we are not processing all regions," />
+    <option name="LAST_COMMIT_MESSAGE" value="added fastqc, added promotors +- 10k file which is generated automatically from GTF file, this promotor file is now input to modkit rules, modkitrules are changed however CpG produce empty bed file, clair3 uses only main chromosomes (NC_100001.10, etc) which resulted in major speed up as we are not processing all regions," />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/NanoporePipeline$Snakefile.coverage" NAME="Snakefile Coverage Results" MODIFIED="1754638032814" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
